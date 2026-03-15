@@ -119,12 +119,13 @@ class PlexApiService:
     async def initiate_oauth() -> dict[str, Any]:
         try:
             pin_login = MyPlexPinLogin(oauth=True)
-            pin = pin_login.pin
+            # For OAuth mode, get the auth URL first (this generates the code/id internally)
             auth_url = pin_login.oauthUrl()
+            # Use the internal _id as the identifier for polling
+            pin_id = str(pin_login._id) if pin_login._id else str(id(pin_login))
             return {
                 "success": True,
-                "pin": pin,
-                "pin_id": str(pin_login.id) if hasattr(pin_login, "id") else str(pin),
+                "pin_id": pin_id,
                 "auth_url": auth_url,
                 "_pin_login": pin_login,
             }
