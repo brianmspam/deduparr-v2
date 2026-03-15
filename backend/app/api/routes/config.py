@@ -63,5 +63,9 @@ async def get_plex_libraries(db: AsyncSession = Depends(get_db)):
 
     from app.services.plex_api_service import PlexApiService
 
-    service = PlexApiService(url_config.value, token_config.value)
-    return service.get_libraries()
+    try:
+        service = PlexApiService(url_config.value, token_config.value)
+        return service.get_libraries()
+    except Exception as e:
+        logger.error(f"Failed to get Plex libraries: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to connect to Plex: {e}")

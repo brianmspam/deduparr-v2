@@ -38,25 +38,42 @@ async def start_scan(request: ScanStartRequest, db: AsyncSession = Depends(get_d
 
     orchestrator = ScanOrchestrator(db)
 
-    if request.method == "sqlite":
-        result = await db.execute(select(Config).where(Config.key == "plex_db_path"))
-        db_path_config = result.scalar_one_or_none()
-        if not db_path_config or not db_path_config.value:
-            raise HTTPException(status_code=400, detail="Plex database path not configured")
-        scan_result = await orchestrator.scan_sqlite(
-            db_path_config.value,
-            request.library_names if request.library_names else None,
-        )
-    else:
-        result = await db.execute(select(Config).where(Config.key == "plex_url"))
-        url_config = result.scalar_one_or_none()
-        result = await db.execute(select(Config).where(Config.key == "plex_auth_token"))
-        token_config = result.scalar_one_or_none()
-        if not url_config or not token_config or not url_config.value or not token_config.value:
-            raise HTTPException(status_code=400, detail="Plex not configured")
-        scan_result = await orchestrator.scan_api(
-            url_config.value, token_config.value, request.library_names
-        )
+    try:
+        if request.method == "sqlite":
+            result = await db.execute(select(Config).where(Config.key == "plex_db_path"))
+            db_path_config = result.scalar_one_or_none()
+            if not db_path_config or not db_path_config.value:
+                raise HTTPException(status_code=400, detail="Plex database path not configured")
+            scan_result = await orchestrator.scan_sqlite(
+                db_path_config.value,
+                request.library_names if request.library_names else None,
+            )
+        else:
+            result = await db.execute(select(Config).where(Config.key == "plex_url"))
+            url_config = result.scalar_one_or_none()
+            result = await db.execute(select(Config).where(Config.key == "plex_auth_token"))
+            token_config = result.scalar_one_or_none()
+            if not url_config or not token_config or not url_config.value or not token_config.value:
+                raise HTTPException(status_code=400, detail="Plex not configured")
+
+            # If no libraries selected, auto-discover all libraries
+            library_names = request.library_names
+            if not library_names:
+                from app.services.plex_api_service import PlexApiService
+                service = PlexApiService(url_config.value, token_config.value)
+                libs = service.get_libraries()
+                library_names = [lib["title"] for lib in libs]
+                if not library_names:
+                    raise HTTPException(status_code=400, detail="No Plex libraries found")
+
+            scan_result = await orchestrator.scan_api(
+                url_config.value, token_config.value, library_names
+            )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Scan failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
 
     return scan_result
 
