@@ -1,7 +1,7 @@
 """Setup endpoints — Plex OAuth, connection tests."""
 
 import logging
-from typing import Any, Optional
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -18,9 +18,8 @@ logger = logging.getLogger(__name__)
 _pin_logins: dict[str, Any] = {}
 
 
-class PlexTestRequest(BaseModel):
-    plex_url: str
-    plex_token: str
+class PlexCallbackRequest(BaseModel):
+    pin_id: str
 
 
 class PlexServerRequest(BaseModel):
@@ -45,10 +44,11 @@ async def get_plex_auth_url():
 
 
 @router.post("/plex/callback")
-async def plex_oauth_callback(pin_id: str, db: AsyncSession = Depends(get_db)):
+async def plex_oauth_callback(request: PlexCallbackRequest, db: AsyncSession = Depends(get_db)):
     """Check if Plex OAuth is complete and store the token."""
     from app.services.plex_api_service import PlexApiService
 
+    pin_id = request.pin_id
     pin_login = _pin_logins.get(pin_id)
     if not pin_login:
         raise HTTPException(status_code=404, detail="PIN not found or expired")
@@ -71,13 +71,30 @@ async def plex_oauth_callback(pin_id: str, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/plex/test")
-async def test_plex_connection(request: PlexTestRequest):
-    """Test Plex server connection."""
+async def test_plex_connection(db: AsyncSession = Depends(get_db)):
+    """Test Plex server connection using saved config."""
     from app.services.plex_api_service import PlexApiService
 
-    service = PlexApiService(request.plex_url, request.plex_token)
+    # Read saved config from database
+    url_row = await db.execute(select(Config).where(Config.key == "plex_url"))
+    url_config = url_row.scalar_one_or_none()
+    token_row = await db.execute(select(Config).where(Config.key == "plex_auth_token"))
+    token_config = token_row.scalar_one_or_none()
+
+    if not url_config or not url_config.value:
+        return {"success": False, "message": "Plex URL not configured. Please enter and save a Plex URL first."}
+    if not token_config or not token_config.value:
+        return {"success": False, "message": "Plex auth token not found. Please authenticate with OAuth first."}
+
+    service = PlexApiService(url_config.value, token_config.value)
     result = service.test_connection()
-    return result
+    if result.get("success"):
+        return {
+            "success": True,
+            "message": f"Connected to {result.get('server_name', 'Plex')} (v{result.get('version', '?')}, {result.get('platform', '?')})",
+        }
+    else:
+        return {"success": False, "message": result.get("error", "Connection failed")}
 
 
 @router.post("/plex/servers")

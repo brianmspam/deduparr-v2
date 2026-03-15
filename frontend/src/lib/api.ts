@@ -1,10 +1,21 @@
 const BASE_URL = import.meta.env.VITE_API_URL ?? "";
 
+function extractErrorMessage(body: Record<string, unknown>, status: number): string {
+  const detail = body.detail;
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    // FastAPI validation errors: [{"msg": "...", "loc": [...], "type": "..."}]
+    return detail.map((d: Record<string, unknown>) => d.msg ?? JSON.stringify(d)).join("; ");
+  }
+  if (typeof detail === "object" && detail !== null) return JSON.stringify(detail);
+  return `Request failed: ${status}`;
+}
+
 async function fetchAPI<T>(endpoint: string): Promise<T> {
   const res = await fetch(`${BASE_URL}${endpoint}`);
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error(body.detail ?? `Request failed: ${res.status}`);
+    throw new Error(extractErrorMessage(body, res.status));
   }
   return res.json();
 }
@@ -17,7 +28,7 @@ async function postAPI<T, U = unknown>(endpoint: string, data?: U): Promise<T> {
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error(body.detail ?? `Request failed: ${res.status}`);
+    throw new Error(extractErrorMessage(body, res.status));
   }
   return res.json();
 }
@@ -30,7 +41,7 @@ async function putAPI<T, U = unknown>(endpoint: string, data: U): Promise<T> {
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error(body.detail ?? `Request failed: ${res.status}`);
+    throw new Error(extractErrorMessage(body, res.status));
   }
   return res.json();
 }
@@ -43,7 +54,7 @@ async function patchAPI<T, U = unknown>(endpoint: string, data: U): Promise<T> {
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error(body.detail ?? `Request failed: ${res.status}`);
+    throw new Error(extractErrorMessage(body, res.status));
   }
   return res.json();
 }
@@ -52,7 +63,7 @@ async function deleteAPI<T>(endpoint: string): Promise<T> {
   const res = await fetch(`${BASE_URL}${endpoint}`, { method: "DELETE" });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error(body.detail ?? `Request failed: ${res.status}`);
+    throw new Error(extractErrorMessage(body, res.status));
   }
   return res.json();
 }
