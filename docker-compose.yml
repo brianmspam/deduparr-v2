@@ -1,0 +1,25 @@
+services:
+  deduparr:
+    build: .
+    container_name: deduparr
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - TZ=${TZ:-Etc/UTC}
+      - DATABASE_URL=sqlite:////config/deduparr.db
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    volumes:
+      - ${CONFIG_PATH:-./config}:/config
+      # Mount Plex config for SQLite direct query (optional)
+      - ${PLEX_CONFIG_PATH:-/dev/null}:/plex-config:ro
+      # Mount media at SAME path Plex uses
+      - ${MEDIA_PATH:-/path/to/media}:/media:rw
+    ports:
+      - "${UI_PORT:-8655}:8655"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8655/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
