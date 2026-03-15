@@ -57,10 +57,44 @@ async def init_db():
 
         await conn.run_sync(Base.metadata.create_all)
 
+        # Migrate existing tables — add missing columns
+        await _migrate_tables(conn)
+
         await conn.execute(text("PRAGMA journal_mode = WAL"))
         await conn.execute(text("PRAGMA synchronous = NORMAL"))
         await conn.execute(text("PRAGMA cache_size = -64000"))
         await conn.execute(text("PRAGMA temp_store = MEMORY"))
+
+
+async def _migrate_tables(conn):
+    """Add missing columns to existing tables (SQLite doesn't support ALTER for create_all)."""
+    from sqlalchemy import text
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    # Define expected columns: (table, column, SQL type, default)
+    migrations = [
+        ("scoring_rules", "name", "VARCHAR(255) NOT NULL DEFAULT ''"),
+        ("scoring_rules", "pattern", "TEXT NOT NULL DEFAULT ''"),
+        ("scoring_rules", "score_modifier", "INTEGER NOT NULL DEFAULT 0"),
+        ("scoring_rules", "enabled", "BOOLEAN NOT NULL DEFAULT 1"),
+        ("scoring_rules", "created_at", "DATETIME"),
+        ("duplicate_sets", "scan_method", "VARCHAR(50)"),
+        ("duplicate_sets", "space_to_reclaim", "INTEGER DEFAULT 0"),
+        ("duplicate_files", "file_metadata", "TEXT"),
+    ]
+
+    for table, column, col_type in migrations:
+        try:
+            result = await conn.execute(text(f"PRAGMA table_info({table})"))
+            existing_columns = {row[1] for row in result.fetchall()}
+            if column not in existing_columns:
+                logger.info(f"Migrating: adding {column} to {table}")
+                await conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}"))
+        except Exception as e:
+            # Table might not exist yet (will be created by create_all)
+            logger.debug(f"Migration skipped for {table}.{column}: {e}")
 
 
 async def get_db():
