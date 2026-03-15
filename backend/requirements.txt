@@ -10,7 +10,8 @@ aiosqlite==0.20.0
 greenlet==3.1.1
 
 # Plex
-plexapi==4.15.16
+plexapi==4.18.0
+requests>=2.31.0
 
 # HTTP client
 httpx==0.28.1

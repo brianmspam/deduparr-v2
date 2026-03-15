@@ -4,14 +4,20 @@ Plex API service — connects to Plex via plexapi library.
 
 import logging
 from typing import Any
+from urllib.parse import urlparse
 
+import requests
 import plexapi
 from plexapi.myplex import MyPlexAccount, MyPlexPinLogin
 from plexapi.server import PlexServer
 
 plexapi.X_PLEX_PRODUCT = "DeDuparr"
+plexapi.BASE_HEADERS["Accept"] = "application/json"
 
 logger = logging.getLogger(__name__)
+
+# Connection timeout in seconds
+CONNECT_TIMEOUT = 10
 
 
 class PlexApiService:
@@ -22,10 +28,40 @@ class PlexApiService:
 
     def _get_server(self) -> PlexServer:
         if self._server is None:
-            self._server = PlexServer(self.base_url, self.token)
+            session = requests.Session()
+            session.verify = False  # Allow self-signed certs for local Plex
+            self._server = PlexServer(self.base_url, self.token, session=session, timeout=CONNECT_TIMEOUT)
         return self._server
 
+    def _pre_check_connectivity(self) -> str | None:
+        """Quick HTTP check before using plexapi — returns error message or None."""
+        try:
+            resp = requests.get(
+                f"{self.base_url}/identity",
+                timeout=CONNECT_TIMEOUT,
+                verify=False,
+            )
+            if resp.status_code == 200:
+                return None
+            return f"Plex responded with HTTP {resp.status_code}"
+        except requests.exceptions.ConnectionError as e:
+            parsed = urlparse(self.base_url)
+            return (
+                f"Cannot connect to {self.base_url} — connection refused or host unreachable. "
+                f"Make sure Plex is running at {parsed.hostname}:{parsed.port} and is accessible "
+                f"from the DeDuparr container (try: curl {self.base_url}/identity from the container)."
+            )
+        except requests.exceptions.Timeout:
+            return f"Connection to {self.base_url} timed out after {CONNECT_TIMEOUT}s."
+        except Exception as e:
+            return f"Connectivity check failed: {e}"
+
     def test_connection(self) -> dict[str, Any]:
+        # Quick pre-check with better error messages
+        pre_check_error = self._pre_check_connectivity()
+        if pre_check_error:
+            return {"success": False, "error": pre_check_error}
+
         try:
             server = self._get_server()
             return {
@@ -35,6 +71,7 @@ class PlexApiService:
                 "platform": server.platform,
             }
         except Exception as e:
+            logger.error(f"Plex connection failed: {e}", exc_info=True)
             return {"success": False, "error": str(e)}
 
     def get_libraries(self) -> list[dict[str, str]]:
