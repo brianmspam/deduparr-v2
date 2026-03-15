@@ -11,7 +11,7 @@ import { Save, TestTube, Plus, Trash2, ExternalLink } from "lucide-react";
 export default function Settings() {
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<"plex" | "arr" | "scoring">("plex");
-  const [formValues, setFormValues] = useState<Record<string, string>>({});
+  const [formValues, setFormValues] = useState<Record<string, string | null>>({});
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
 
   const { data: config } = useQuery({
@@ -28,7 +28,7 @@ export default function Settings() {
 
   useEffect(() => {
     if (config) {
-      setFormValues((prev) => ({ ...prev, ...config }));
+      setFormValues((prev) => ({ ...prev, ...(config as Record<string, string | null>) }));
     }
   }, [config]);
 
