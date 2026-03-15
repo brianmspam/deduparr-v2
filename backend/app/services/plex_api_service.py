@@ -118,7 +118,7 @@ class PlexApiService:
     @staticmethod
     async def initiate_oauth() -> dict[str, Any]:
         try:
-            pin_login = MyPlexPinLogin()
+            pin_login = MyPlexPinLogin(oauth=True)
             pin = pin_login.pin
             auth_url = pin_login.oauthUrl()
             return {
