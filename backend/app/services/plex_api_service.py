@@ -12,7 +12,6 @@ from plexapi.myplex import MyPlexAccount, MyPlexPinLogin
 from plexapi.server import PlexServer
 
 plexapi.X_PLEX_PRODUCT = "DeDuparr"
-plexapi.BASE_HEADERS["Accept"] = "application/json"
 
 logger = logging.getLogger(__name__)
 
