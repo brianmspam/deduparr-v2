@@ -72,9 +72,10 @@ class PlexDbService:
     def __init__(self, db_path: str):
         self.db_path = db_path
 
-    def copy_db_to_local(self) -> str:
+        def copy_db_to_local(self) -> str:
         """
-        Copy Plex DB and related files to a local directory inside the container.
+        Copy only the main Plex DB file to a local directory inside the container.
+        Clears the target directory before copying.
         Returns the local DB path as a string and updates self.db_path.
         """
         if not self.db_path:
@@ -84,36 +85,22 @@ class PlexDbService:
         if not src.is_file():
             raise FileNotFoundError(f"Plex DB not found at {src}")
 
+        # Ensure target directory exists
         LOCAL_PLEX_DB_DIR.mkdir(parents=True, exist_ok=True)
 
-        base = src.name  # e.g. com.plexapp.plugins.library.db
-        prefix = base.rsplit(".db", 1)[0]
+        # Clean target directory (files only)
+        for entry in LOCAL_PLEX_DB_DIR.iterdir():
+            if entry.is_file():
+                entry.unlink()
 
-        for entry in src.parent.iterdir():
-            name = entry.name
-            if not entry.is_file():
-                continue
+        # Copy only the main DB file
+        dest = LOCAL_PLEX_DB_DIR / src.name
+        shutil.copy2(src, dest)
 
-            # main db
-            if name == base:
-                shutil.copy2(entry, LOCAL_PLEX_DB_DIR / name)
-                continue
+        if not dest.is_file():
+            raise FileNotFoundError(f"Local Plex DB copy not found at {dest}")
 
-            # date‑suffixed backups: com.plexapp.plugins.library.db-YYYY-MM-DD
-            if name.startswith(f"{base}-"):
-                shutil.copy2(entry, LOCAL_PLEX_DB_DIR / name)
-                continue
-
-            # wal/shm variants
-            if name.endswith(".db-wal") or name.endswith(".db-shm"):
-                if name.startswith(prefix):
-                    shutil.copy2(entry, LOCAL_PLEX_DB_DIR / name)
-
-        local_db = LOCAL_PLEX_DB_DIR / base
-        if not local_db.is_file():
-            raise FileNotFoundError(f"Local Plex DB copy not found at {local_db}")
-
-        self.db_path = str(local_db)
+        self.db_path = str(dest)
         logger.info("Plex DB copied to local path: %s", self.db_path)
         return self.db_path
 
