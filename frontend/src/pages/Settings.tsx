@@ -122,6 +122,29 @@ export default function Settings() {
     },
   });
 
+  // Verify Plex DB after saving plex_db_path
+  const [dbStatus, setDbStatus] = useState<{ path: string; size_mb: number } | null>(null);
+  const [dbStatusError, setDbStatusError] = useState<string | null>(null);
+  const verifyPlexDb = async () => {
+    setDbStatus(null);
+    setDbStatusError(null);
+    try {
+      const res = await fetch("/api/config/plex-db/status");
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data?.detail || "Failed to verify Plex DB");
+      }
+      setDbStatus({ path: data.path, size_mb: data.size_mb });
+    } catch (err: any) {
+      setDbStatusError(err.message || "Failed to verify Plex DB");
+    }
+  };
+
+  const savePlexDbPathAndVerify = async () => {
+    saveConfig();
+    await verifyPlexDb();
+  };
+
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold">Settings</h1>
@@ -135,6 +158,8 @@ export default function Settings() {
               setTab(t);
               setTestResult(null);
               setCopyStatus(null);
+              setDbStatus(null);
+              setDbStatusError(null);
             }}
             className={`rounded-t-md px-4 py-2 text-sm font-medium transition-colors ${
               tab === t
@@ -216,13 +241,17 @@ export default function Settings() {
                 <Input
                   value={formValues.plex_db_path ?? ""}
                   onChange={(e) => setField("plex_db_path", e.target.value)}
-                  placeholder="/plex-config/Library/Application Support/Plex Media Server/Plug-in Support/Databases/com.plexapp.plugins.library.db"
+                  placeholder="/plex_db/com.plexapp.plugins.library.db"
                 />
               </div>
               <div className="flex flex-wrap gap-2">
-                <Button onClick={saveConfig} disabled={saveMutation.isPending} size="sm">
+                <Button
+                  onClick={savePlexDbPathAndVerify}
+                  disabled={saveMutation.isPending}
+                  size="sm"
+                >
                   <Save className="mr-2 h-4 w-4" />
-                  Save
+                  Save & Verify
                 </Button>
                 <Button
                   variant="outline"
@@ -234,6 +263,16 @@ export default function Settings() {
                   {copyPlexDbMutation.isPending ? "Copying..." : "Copy Plex DB to local"}
                 </Button>
               </div>
+              {dbStatus && (
+                <Badge variant="success" className="mt-2">
+                  Found Plex DB at {dbStatus.path} ({dbStatus.size_mb} MB)
+                </Badge>
+              )}
+              {dbStatusError && (
+                <Badge variant="destructive" className="mt-2">
+                  {dbStatusError}
+                </Badge>
+              )}
               {copyStatus && (
                 <Badge
                   variant={copyStatus.type === "success" ? "success" : "destructive"}
@@ -319,7 +358,8 @@ export default function Settings() {
             <CardHeader>
               <CardTitle className="text-base">Default Scoring</CardTitle>
               <CardDescription>
-                Built-in scoring: Codec (0-55) + Container (0-40) + Resolution (0-50) + Size (0-30) = max 175
+                Built-in scoring: Codec (0-55) + Container (0-40) + Resolution (0-50) + Size (0-30) =
+                max 175
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -344,98 +384,4 @@ export default function Settings() {
             <CardHeader>
               <CardTitle className="text-base">Custom Scoring Rules</CardTitle>
               <CardDescription>
-                Add regex-based rules to adjust scores for specific file patterns
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {rules && rules.length > 0 ? (
-                <div className="space-y-2">
-                  {rules.map((rule: ScoringRule) => (
-                    <div
-                      key={rule.id}
-                      className="flex items-center justify-between rounded-md border px-3 py-2"
-                    >
-                      <div>
-                        <span className="font-medium">{rule.name}</span>
-                        <span className="ml-2 text-xs text-muted-foreground">
-                          /{rule.pattern}/
-                        </span>
-                        <Badge
-                          variant={rule.score_modifier >= 0 ? "success" : "destructive"}
-                          className="ml-2"
-                        >
-                          {rule.score_modifier >= 0 ? "+" : ""}
-                          {rule.score_modifier}
-                        </Badge>
-                        {!rule.enabled && (
-                          <Badge variant="secondary" className="ml-1">
-                            disabled
-                          </Badge>
-                        )}
-                      </div>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => deleteRuleMutation.mutate(rule.id)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-sm text-muted-foreground">No custom rules defined.</p>
-              )}
-
-              <div className="rounded-md border p-3 space-y-3">
-                <div className="grid gap-3 sm:grid-cols-3">
-                  <div>
-                    <Label>Name</Label>
-                    <Input
-                      value={newRule.name}
-                      onChange={(e) =>
-                        setNewRule((r) => ({ ...r, name: e.target.value }))
-                      }
-                      placeholder="Rule name"
-                    />
-                  </div>
-                  <div>
-                    <Label>Pattern (regex)</Label>
-                    <Input
-                      value={newRule.pattern}
-                      onChange={(e) =>
-                        setNewRule((r) => ({ ...r, pattern: e.target.value }))
-                      }
-                      placeholder="\\.remux\\."
-                    />
-                  </div>
-                  <div>
-                    <Label>Score Modifier</Label>
-                    <Input
-                      type="number"
-                      value={newRule.score_modifier}
-                      onChange={(e) =>
-                        setNewRule((r) => ({
-                          ...r,
-                          score_modifier: parseInt(e.target.value) || 0,
-                        }))
-                      }
-                    />
-                  </div>
-                </div>
-                <Button
-                  size="sm"
-                  onClick={() => createRuleMutation.mutate()}
-                  disabled={!newRule.name || !newRule.pattern || createRuleMutation.isPending}
-                >
-                  <Plus className="mr-2 h-4 w-4" />
-                  Add Rule
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-    </div>
-  );
-}
+                Add regex-based
