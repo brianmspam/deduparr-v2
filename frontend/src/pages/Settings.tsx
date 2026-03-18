@@ -243,61 +243,70 @@ export default function Settings() {
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">SQLite Direct Query</CardTitle>
-              <CardDescription>
-                Path to a copy of the Plex database (for advanced duplicate detection)
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div>
-                <Label>Plex Database Path</Label>
-                <Input
-                  value={formValues.plex_db_path ?? ""}
-                  onChange={(e) => setField("plex_db_path", e.target.value)}
-                  placeholder="/plex_db/com.plexapp.plugins.library.db"
-                />
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  onClick={savePlexDbPathAndVerify}
-                  disabled={saveMutation.isPending}
-                  size="sm"
-                >
-                  <Save className="mr-2 h-4 w-4" />
-                  Save & Verify
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => copyPlexDbMutation.mutate()}
-                  disabled={copyPlexDbMutation.isPending}
-                >
-                  <HardDriveDownload className="mr-2 h-4 w-4" />
-                  {copyPlexDbMutation.isPending ? "Copying..." : "Copy Plex DB to local"}
-                </Button>
-              </div>
-              {dbStatus && (
-                <Badge variant="success" className="mt-2">
-                  Found Plex DB at {dbStatus.path} ({dbStatus.size_mb} MB)
-                </Badge>
-              )}
-              {dbStatusError && (
-                <Badge variant="destructive" className="mt-2">
-                  {dbStatusError}
-                </Badge>
-              )}
-              {copyStatus && (
-                <Badge
-                  variant={copyStatus.type === "success" ? "success" : "destructive"}
-                  className="mt-2"
-                >
-                  {copyStatus.message}
-                </Badge>
-              )}
-            </CardContent>
-          </Card>
+                  <Card>
+                      <CardHeader>
+                          <CardTitle className="text-base">SQLite Direct Query</CardTitle>
+                          <CardDescription>
+                              Path to the Plex database (for advanced duplicate detection) and local copy name
+    </CardDescription>
+                      </CardHeader>
+                      <CardContent className="space-y-4">
+                          <div>
+                              <Label>Plex Database Path</Label>
+                              <Input
+                                  value={formValues.plex_db_path ?? ""}
+                                  onChange={(e) => setField("plex_db_path", e.target.value)}
+                                  placeholder="/plex-config/.../com.plexapp.plugins.library.db"
+                              />
+                          </div>
+                          <div>
+                              <Label>Local Copy File Name</Label>
+                              <Input
+                                  value={formValues.plex_db_local_name ?? ""}
+                                  onChange={(e) => setField("plex_db_local_name", e.target.value)}
+                                  placeholder="com.plexapp.plugins.library.db"
+                              />
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                              <Button
+                                  onClick={savePlexDbPathAndVerify}
+                                  disabled={saveMutation.isPending}
+                                  size="sm"
+                              >
+                                  <Save className="mr-2 h-4 w-4" />
+        Save & Verify
+      </Button>
+                              <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => copyPlexDbMutation.mutate()}
+                                  disabled={copyPlexDbMutation.isPending}
+                              >
+                                  <HardDriveDownload className="mr-2 h-4 w-4" />
+                                  {copyPlexDbMutation.isPending ? "Copying..." : "Copy Plex DB to local"}
+                              </Button>
+                          </div>
+                          {dbStatus && (
+                              <Badge variant="success" className="mt-2">
+                                  Found Plex DB at {dbStatus.path} ({dbStatus.size_mb} MB)
+                              </Badge>
+                          )}
+                          {dbStatusError && (
+                              <Badge variant="destructive" className="mt-2">
+                                  {dbStatusError}
+                              </Badge>
+                          )}
+                          {copyStatus && (
+                              <Badge
+                                  variant={copyStatus.type === "success" ? "success" : "destructive"}
+                                  className="mt-2"
+                              >
+                                  {copyStatus.message}
+                              </Badge>
+                          )}
+                      </CardContent>
+                  </Card>
+
         </div>
       )}
 

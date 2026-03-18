@@ -45,8 +45,8 @@ async def lifespan(app: FastAPI):
             db_path_config = result.scalar_one_or_none()
 
             if db_path_config and db_path_config.value:
-                service = PlexDbService(db_path_config.value)
-                local_path = service.copy_db_to_local()
+                service = PlexDbService(db_path_config.value, db_session=session)
+                local_path = await service.copy_db_to_local()
                 logger.info("Copied Plex DB to local path on startup: %s", local_path)
             else:
                 logger.info(

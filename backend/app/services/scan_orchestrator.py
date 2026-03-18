@@ -50,11 +50,11 @@ class ScanOrchestrator:
         """
         Scan Plex SQLite DB for duplicates.
 
-        Prefers a local copy of the DB under /data/plex_db_local if present.
+        Prefers a local copy of the DB in the local Plex DB directory if present.
         If not present, it will best-effort copy from the configured path,
         then fall back to scanning the original path if the copy fails.
         """
-        service = PlexDbService(db_path)
+        service = PlexDbService(db_path, db_session=self.db)
         all_duplicates: list[dict[str, Any]] = []
 
         # Prefer local copy if it exists
@@ -66,7 +66,7 @@ class ScanOrchestrator:
         else:
             # Best-effort attempt to copy to local
             try:
-                local_path = service.copy_db_to_local()
+                local_path = await service.copy_db_to_local()
                 logger.info("Copied Plex DB to local path for scan: %s", local_path)
             except Exception as e:
                 logger.warning("Proceeding without local Plex DB copy: %s", e)

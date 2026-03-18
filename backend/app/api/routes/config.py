@@ -88,8 +88,8 @@ async def copy_plex_db_to_local(db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Plex DB path (plex_db_path) is not configured")
 
     try:
-        service = PlexDbService(db_path_config.value)
-        local_path = service.copy_db_to_local()
+        service = PlexDbService(db_path_config.value, db_session=db)
+        local_path = await service.copy_db_to_local()
         return {"local_path": local_path}
     except FileNotFoundError as e:
         raise HTTPException(status_code=400, detail=str(e))

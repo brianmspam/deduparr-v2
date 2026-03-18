@@ -8,6 +8,10 @@ import sqlite3
 import shutil
 from pathlib import Path
 from typing import Any
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.config import Config
 
 logger = logging.getLogger(__name__)
 
@@ -69,13 +73,29 @@ LOCAL_PLEX_DB_DIR = Path("/app/data/plex_db_local")
 
 
 class PlexDbService:
-    def __init__(self, db_path: str):
+    def __init__(self, db_path: str, db_session: AsyncSession | None = None):
         self.db_path = db_path
+        self.db_session = db_session
 
-    def copy_db_to_local(self) -> str:
+    async def _get_local_name(self) -> str:
+        # Default name if not configured
+        default_name = "com.plexapp.plugins.library.db"
+        if not self.db_session:
+            return default_name
+
+        result = await self.db_session.execute(
+            select(Config).where(Config.key == "plex_db_local_name")
+        )
+        cfg = result.scalar_one_or_none()
+        if not cfg or not cfg.value:
+            return default_name
+        return cfg.value
+
+
+    async def copy_db_to_local(self) -> str:
         """
-        Copy only the main Plex DB file to a local directory inside the container.
-        Clears the target directory before copying.
+        Copy only the main Plex DB file to /app/data using the configured local file name.
+        Clears any existing file with the same name first.
         Returns the local DB path as a string and updates self.db_path.
         """
         if not self.db_path:
@@ -85,16 +105,14 @@ class PlexDbService:
         if not src.is_file():
             raise FileNotFoundError(f"Plex DB not found at {src}")
 
-        # Ensure target directory exists
         LOCAL_PLEX_DB_DIR.mkdir(parents=True, exist_ok=True)
 
-        # Clean target directory (files only)
-        for entry in LOCAL_PLEX_DB_DIR.iterdir():
-            if entry.is_file():
-                entry.unlink()
+        local_name = await self._get_local_name()
+        dest = LOCAL_PLEX_DB_DIR / local_name
 
-        # Copy only the main DB file
-        dest = LOCAL_PLEX_DB_DIR / src.name
+        if dest.is_file():
+            dest.unlink()
+
         shutil.copy2(src, dest)
 
         if not dest.is_file():
@@ -103,6 +121,7 @@ class PlexDbService:
         self.db_path = str(dest)
         logger.info("Plex DB copied to local path: %s", self.db_path)
         return self.db_path
+
 
     def find_duplicates(self, library_name: str | None = None) -> list[dict[str, Any]]:
         """
