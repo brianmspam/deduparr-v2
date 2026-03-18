@@ -1,5 +1,6 @@
 """Config endpoints — CRUD for key-value config store."""
 
+import os
 import logging
 from typing import Any
 
@@ -95,3 +96,28 @@ async def copy_plex_db_to_local(db: AsyncSession = Depends(get_db)):
     except Exception as e:
         logger.error(f"Failed to copy Plex DB to local: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Copy failed: {e}")
+
+@router.get("/plex-db/status")
+async def get_plex_db_status(db: AsyncSession = Depends(get_db)):
+    """
+    Check whether the configured Plex DB file exists and return its size.
+    Uses the 'plex_db_path' config key.
+    """
+    result = await db.execute(select(Config).where(Config.key == "plex_db_path"))
+    db_path_config = result.scalar_one_or_none()
+
+    if not db_path_config or not db_path_config.value:
+        raise HTTPException(status_code=400, detail="Plex DB path (plex_db_path) is not configured")
+
+    db_path = db_path_config.value
+
+    # Check existence and size inside the container filesystem
+    if not os.path.isfile(db_path):
+        raise HTTPException(status_code=404, detail=f"Plex DB not found at {db_path}")
+
+    size_bytes = os.path.getsize(db_path)
+    return {
+        "path": db_path,
+        "size_bytes": size_bytes,
+        "size_mb": round(size_bytes / (1024 * 1024), 2),
+    }
