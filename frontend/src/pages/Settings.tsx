@@ -136,10 +136,19 @@ export default function Settings() {
     setDbStatusError(null);
     try {
       const res = await fetch("/api/config/plex-db/status");
-      const data = await res.json();
+      const text = await res.text();
+      let data: any = null;
+      try {
+        data = text ? JSON.parse(text) : null;
+      } catch {
+        // Not JSON – likely HTML error page
+        throw new Error(text.slice(0, 200) || "Unexpected non-JSON response from server");
+      }
+
       if (!res.ok) {
         throw new Error(data?.detail || "Failed to verify Plex DB");
       }
+
       setDbStatus({ path: data.path, size_mb: data.size_mb });
     } catch (err: any) {
       setDbStatusError(err.message || "Failed to verify Plex DB");
