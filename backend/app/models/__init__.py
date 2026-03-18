@@ -11,5 +11,5 @@ __all__ = [
     "MediaType",
     "DeletionHistory",
     "ScoringRule",
-    "folder_priority",
+    "FolderPriority",
 ]

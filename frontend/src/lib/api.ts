@@ -247,18 +247,53 @@ export const scoringAPI = {
   updateRule: (id: number, rule: Partial<ScoringRule>) =>
     putAPI<ScoringRule>(`/api/scoring/rules/${id}`, rule),
     deleteRule: (id: number) => deleteAPI<{ status: string }>(`/api/scoring/rules/${id}`),
-    scanFolderPriority: (minCount: number) =>
-        fetch(`/api/scoring/folder-priority/scan?min_count=${minCount}`, {
+    scanFolderPriority: async (minCount: number) => {
+        const res = await fetch(`/api/scoring/folder-priority/scan?min_count=${minCount}`, {
             method: "POST",
-        }).then((r) => r.json()),
-    listFolderPriority: () =>
-        fetch("/api/scoring/folder-priority").then((r) => r.json()),
-    updateFolderPriority: (id: number, body: Partial<{ priority: string; enabled: boolean }>) =>
-        fetch(`/api/scoring/folder-priority/${id}`, {
+            headers: { "Content-Type": "application/json" },
+        });
+        const text = await res.text();
+        const data = text ? JSON.parse(text) : null;
+        if (!res.ok) {
+            throw new Error(data?.detail || "Folder scan failed");
+        }
+        return data as { folders: { path: string; file_count: number }[] };
+    },
+
+    listFolderPriority: async () => {
+        const res = await fetch("/api/scoring/folder-priority", {
+            method: "GET",
+            headers: { "Content-Type": "application/json" },
+        });
+        const text = await res.text();
+        const data = text ? JSON.parse(text) : null;
+        if (!res.ok) {
+            throw new Error(data?.detail || "Failed to load folder priorities");
+        }
+        return data as {
+            id: number;
+            path: string;
+            priority: "high" | "medium" | "low";
+            enabled: boolean;
+        }[];
+    },
+
+    updateFolderPriority: async (
+        id: number,
+        body: Partial<{ priority: string; enabled: boolean }>
+    ) => {
+        const res = await fetch(`/api/scoring/folder-priority/${id}`, {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(body),
-        }).then((r) => r.json()),
+        });
+        const text = await res.text();
+        const data = text ? JSON.parse(text) : null;
+        if (!res.ok) {
+            throw new Error(data?.detail || "Failed to update folder priority");
+        }
+        return data;
+    },
 };
 
 export const systemAPI = {
