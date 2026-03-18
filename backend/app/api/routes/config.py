@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db
 from app.models.config import Config
+from app.services.plex_db_service import PlexDbService
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -27,7 +28,7 @@ async def get_all_config(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Config))
     configs = result.scalars().all()
 
-    data = {}
+    data: dict[str, Any] = {}
     for c in configs:
         if c.key in SENSITIVE_KEYS and c.value:
             data[c.key] = "********"
@@ -69,3 +70,28 @@ async def get_plex_libraries(db: AsyncSession = Depends(get_db)):
     except Exception as e:
         logger.error(f"Failed to get Plex libraries: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to connect to Plex: {e}")
+
+
+@router.post("/plex-db/copy-local")
+async def copy_plex_db_to_local(db: AsyncSession = Depends(get_db)):
+    """
+    Copy Plex DB from the configured path to a local directory inside the container.
+    Uses the stored 'plex_db_path' config key to know where the DB lives.
+    Returns the new local DB path.
+    """
+    # Look up plex_db_path from config store
+    result = await db.execute(select(Config).where(Config.key == "plex_db_path"))
+    db_path_config = result.scalar_one_or_none()
+
+    if not db_path_config or not db_path_config.value:
+        raise HTTPException(status_code=400, detail="Plex DB path (plex_db_path) is not configured")
+
+    try:
+        service = PlexDbService(db_path_config.value)
+        local_path = service.copy_db_to_local()
+        return {"local_path": local_path}
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Failed to copy Plex DB to local: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Copy failed: {e}")
