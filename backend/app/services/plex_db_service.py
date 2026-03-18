@@ -5,6 +5,8 @@ Opens a Plex SQLite database (backup copy) read-only and finds duplicates.
 
 import logging
 import sqlite3
+import shutil
+from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -62,10 +64,58 @@ SELECT * FROM all_versions
 ORDER BY metadata_id, media_item_id;
 """
 
+# Local directory inside the container where we keep a copy of the Plex DB
+LOCAL_PLEX_DB_DIR = Path("/data/plex_db_local")
+
 
 class PlexDbService:
     def __init__(self, db_path: str):
         self.db_path = db_path
+
+    def copy_db_to_local(self) -> str:
+        """
+        Copy Plex DB and related files to a local directory inside the container.
+        Returns the local DB path as a string and updates self.db_path.
+        """
+        if not self.db_path:
+            raise ValueError("Plex DB path is not configured.")
+
+        src = Path(self.db_path)
+        if not src.is_file():
+            raise FileNotFoundError(f"Plex DB not found at {src}")
+
+        LOCAL_PLEX_DB_DIR.mkdir(parents=True, exist_ok=True)
+
+        base = src.name  # e.g. com.plexapp.plugins.library.db
+        prefix = base.rsplit(".db", 1)[0]
+
+        for entry in src.parent.iterdir():
+            name = entry.name
+            if not entry.is_file():
+                continue
+
+            # main db
+            if name == base:
+                shutil.copy2(entry, LOCAL_PLEX_DB_DIR / name)
+                continue
+
+            # date‑suffixed backups: com.plexapp.plugins.library.db-YYYY-MM-DD
+            if name.startswith(f"{base}-"):
+                shutil.copy2(entry, LOCAL_PLEX_DB_DIR / name)
+                continue
+
+            # wal/shm variants
+            if name.endswith(".db-wal") or name.endswith(".db-shm"):
+                if name.startswith(prefix):
+                    shutil.copy2(entry, LOCAL_PLEX_DB_DIR / name)
+
+        local_db = LOCAL_PLEX_DB_DIR / base
+        if not local_db.is_file():
+            raise FileNotFoundError(f"Local Plex DB copy not found at {local_db}")
+
+        self.db_path = str(local_db)
+        logger.info("Plex DB copied to local path: %s", self.db_path)
+        return self.db_path
 
     def find_duplicates(self, library_name: str | None = None) -> list[dict[str, Any]]:
         """
@@ -112,7 +162,10 @@ class PlexDbService:
     def test_connection(self) -> dict[str, Any]:
         try:
             conn = sqlite3.connect(f"file:{self.db_path}?mode=ro", uri=True)
-            cursor = conn.execute("SELECT COUNT(*) FROM metadata_items WHERE media_item_count > 1 AND metadata_type IN (1, 4)")
+            cursor = conn.execute(
+                "SELECT COUNT(*) FROM metadata_items "
+                "WHERE media_item_count > 1 AND metadata_type IN (1, 4)"
+            )
             count = cursor.fetchone()[0]
             conn.close()
             return {"success": True, "duplicate_count": count}
