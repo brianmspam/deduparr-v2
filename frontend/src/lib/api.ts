@@ -246,7 +246,19 @@ export const scoringAPI = {
     postAPI<ScoringRule>("/api/scoring/rules", rule),
   updateRule: (id: number, rule: Partial<ScoringRule>) =>
     putAPI<ScoringRule>(`/api/scoring/rules/${id}`, rule),
-  deleteRule: (id: number) => deleteAPI<{ status: string }>(`/api/scoring/rules/${id}`),
+    deleteRule: (id: number) => deleteAPI<{ status: string }>(`/api/scoring/rules/${id}`),
+    scanFolderPriority: (minCount: number) =>
+        fetch(`/api/scoring/folder-priority/scan?min_count=${minCount}`, {
+            method: "POST",
+        }).then((r) => r.json()),
+    listFolderPriority: () =>
+        fetch("/api/scoring/folder-priority").then((r) => r.json()),
+    updateFolderPriority: (id: number, body: Partial<{ priority: string; enabled: boolean }>) =>
+        fetch(`/api/scoring/folder-priority/${id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+        }).then((r) => r.json()),
 };
 
 export const systemAPI = {

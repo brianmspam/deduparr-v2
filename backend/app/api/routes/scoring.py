@@ -115,3 +115,42 @@ async def delete_scoring_rule(
     await db.delete(rule)
     await db.commit()
     return {"status": "deleted", "id": rule_id}
+
+class FolderPriorityOut(BaseModel):
+    id: int
+    path: str
+    priority: str
+    enabled: bool
+
+    class Config:
+        orm_mode = True
+
+class FolderPriorityUpdate(BaseModel):
+    priority: str | None = None
+    enabled: bool | None = None
+
+@router.get("/folder-priority", response_model=list[FolderPriorityOut])
+async def list_folder_priorities(db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(FolderPriority).order_by(FolderPriority.path))
+    return result.scalars().all()
+
+@router.patch("/folder-priority/{folder_id}", response_model=FolderPriorityOut)
+async def update_folder_priority(
+    folder_id: int,
+    payload: FolderPriorityUpdate,
+    db: AsyncSession = Depends(get_db),
+):
+    fp = await db.get(FolderPriority, folder_id)
+    if not fp:
+        raise HTTPException(status_code=404, detail="Folder not found")
+
+    if payload.priority is not None:
+        if payload.priority not in {"high", "medium", "low"}:
+            raise HTTPException(status_code=400, detail="Invalid priority")
+        fp.priority = payload.priority
+    if payload.enabled is not None:
+        fp.enabled = payload.enabled
+
+    await db.commit()
+    await db.refresh(fp)
+    return fp
