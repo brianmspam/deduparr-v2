@@ -72,7 +72,7 @@ class PlexDbService:
     def __init__(self, db_path: str):
         self.db_path = db_path
 
-        def copy_db_to_local(self) -> str:
+    def copy_db_to_local(self) -> str:
         """
         Copy only the main Plex DB file to a local directory inside the container.
         Clears the target directory before copying.
@@ -122,7 +122,6 @@ class PlexDbService:
         if library_name:
             raw_rows = [r for r in raw_rows if r.get("library_name") == library_name]
 
-        # Convert to unified format matching PlexApiService output
         results: list[dict[str, Any]] = []
         for row in raw_rows:
             file_size = row.get("file_size") or row.get("mi_size") or 0
