@@ -15,6 +15,7 @@ from app.api.routes.system import setup_log_capture
 from app.models.config import Config
 from app.services.plex_db_service import PlexDbService
 
+
 # Configure logging
 logging.basicConfig(
     level=getattr(logging, settings.log_level.upper(), logging.INFO),

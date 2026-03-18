@@ -1,18 +1,25 @@
-"""Scoring endpoints — CRUD for custom scoring rules."""
+"""Scoring endpoints — CRUD for custom scoring rules and folder priorities."""
 
 import logging
+from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db
 from app.models.scoring_rule import ScoringRule
+from app.models.folder_priority import FolderPriority
+from app.models.config import Config
+from app.services.plex_db_service import PlexDbService
+from app.services.folder_priority_service import FolderStatsService
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
+
+# ─── Scoring Rules ─────────────────────────────────────────────────────────────
 
 class ScoringRuleCreate(BaseModel):
     name: str
@@ -110,11 +117,14 @@ async def delete_scoring_rule(
     result = await db.execute(select(ScoringRule).where(ScoringRule.id == rule_id))
     rule = result.scalar_one_or_none()
     if not rule:
-        raise HTTPException(status_code=404, detail="Rule not found")
+      raise HTTPException(status_code=404, detail="Rule not found")
 
     await db.delete(rule)
     await db.commit()
     return {"status": "deleted", "id": rule_id}
+
+
+# ─── Folder Priority CRUD ──────────────────────────────────────────────────────
 
 class FolderPriorityOut(BaseModel):
     id: int
@@ -125,14 +135,17 @@ class FolderPriorityOut(BaseModel):
     class Config:
         orm_mode = True
 
+
 class FolderPriorityUpdate(BaseModel):
     priority: str | None = None
     enabled: bool | None = None
+
 
 @router.get("/folder-priority", response_model=list[FolderPriorityOut])
 async def list_folder_priorities(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(FolderPriority).order_by(FolderPriority.path))
     return result.scalars().all()
+
 
 @router.patch("/folder-priority/{folder_id}", response_model=FolderPriorityOut)
 async def update_folder_priority(
@@ -154,3 +167,75 @@ async def update_folder_priority(
     await db.commit()
     await db.refresh(fp)
     return fp
+
+
+# ─── Folder Priority Scan from Plex DB ────────────────────────────────────────
+
+@router.post("/folder-priority/scan")
+async def scan_folder_priorities(
+    min_count: int = Query(10, ge=1),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Scan the Plex SQLite DB for folders with >= min_count video files,
+    upsert them into folder_priority, and flag non-returned folders as disabled.
+    """
+    # Get Plex DB path from config
+    result = await db.execute(select(Config).where(Config.key == "plex_db_path"))
+    cfg = result.scalar_one_or_none()
+    if not cfg or not cfg.value:
+        raise HTTPException(status_code=400, detail="plex_db_path is not configured")
+
+    plex_service = PlexDbService(cfg.value, db_session=db)
+    # Ensure local copy; PlexDbService should set a usable db_path
+    await plex_service.copy_db_to_local()
+
+    stats_service = FolderStatsService(plex_service.db_path)
+    rows = stats_service.get_folder_counts(min_count)  # [{folder, file_count}, ...]
+
+    seen_paths = {row["folder"] for row in rows}
+
+    existing_result = await db.execute(select(FolderPriority))
+    existing = {fp.path: fp for fp in existing_result.scalars().all()}
+
+    # Upsert / enable current folders
+    for row in rows:
+        path = row["folder"]
+        fp = existing.get(path)
+        if fp:
+            fp.enabled = True
+            # keep existing priority
+        else:
+            fp = FolderPriority(
+                path=path,
+                priority="medium",
+                enabled=True,
+            )
+            db.add(fp)
+            existing[path] = fp
+
+    # Disable folders no longer present
+    for path, fp in existing.items():
+        if path not in seen_paths:
+            fp.enabled = False
+
+    await db.commit()
+
+    # Re‑select to get IDs for all current rows
+    refreshed = await db.execute(select(FolderPriority).order_by(FolderPriority.path))
+    all_folders = refreshed.scalars().all()
+
+    # Build response including file_count for scanned folders when available
+    file_count_map: dict[str, int] = {r["folder"]: r["file_count"] for r in rows}
+    return {
+      "folders": [
+        {
+          "id": fp.id,
+          "path": fp.path,
+          "priority": fp.priority,
+          "enabled": fp.enabled,
+          "file_count": file_count_map.get(fp.path),
+        }
+        for fp in all_folders
+      ]
+    }
