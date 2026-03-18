@@ -65,7 +65,7 @@ ORDER BY metadata_id, media_item_id;
 """
 
 # Local directory inside the container where we keep a copy of the Plex DB
-LOCAL_PLEX_DB_DIR = Path("/data/plex_db_local")
+LOCAL_PLEX_DB_DIR = Path("/app/data/plex_db_local")
 
 
 class PlexDbService:
