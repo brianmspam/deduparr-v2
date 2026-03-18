@@ -108,10 +108,16 @@ export default function Settings() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
       });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data?.detail || "Copy failed");
+    const text = await res.text();
+    let data: any;
+    try {
+      data = JSON.parse(text);
+      } catch {
+        throw new Error(`Unexpected response from server: ${text.slice(0, 200)}`);
       }
+      if (!res.ok) {
+          throw new Error(data?.detail || "Copy failed");
+        }
       return data as { local_path: string };
     },
     onSuccess: (data) => {
