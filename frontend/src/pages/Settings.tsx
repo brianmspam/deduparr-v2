@@ -139,6 +139,10 @@ export default function Settings() {
     // Folder priority state
     const [minFolderCount, setMinFolderCount] = useState(10);
     const [folders, setFolders] = useState<FolderPriorityRow[]>([]);
+    const [folderScanStatus, setFolderScanStatus] = useState<{
+        type: "running" | "success" | "error";
+        message: string;
+    } | null>(null);
 
     // Verify Plex DB after saving plex_db_path
     const [dbStatus, setDbStatus] = useState<{ path: string; size_mb: number } | null>(null);
@@ -182,9 +186,21 @@ export default function Settings() {
     }, [tab]);
 
     const handleRunFolderScan = async () => {
-        await scoringAPI.scanFolderPriority(minFolderCount);
-        const list = await scoringAPI.listFolderPriority();
-        setFolders(list);
+        try {
+            setFolderScanStatus({ type: "running", message: "Scanning Plex DB..." });
+            await scoringAPI.scanFolderPriority(minFolderCount);
+            const list = await scoringAPI.listFolderPriority();
+            setFolders(list);
+            setFolderScanStatus({
+                type: "success",
+                message: `Scan completed: ${list.length} folders loaded`,
+            });
+        } catch (err: any) {
+            setFolderScanStatus({
+                type: "error",
+                message: err?.message || "Folder scan failed",
+            });
+        }
     };
 
     const handleChangePriority = async (row: FolderPriorityRow, priority: "high" | "medium" | "low") => {
@@ -552,9 +568,25 @@ export default function Settings() {
                                         className="w-32"
                                     />
                                 </div>
-                                <Button size="sm" onClick={handleRunFolderScan}>
-                                    Run
-                </Button>
+                                <Button
+                                    size="sm"
+                                    onClick={handleRunFolderScan}
+                                    disabled={folderScanStatus?.type === "running"}
+                                >
+                                    {folderScanStatus?.type === "running" ? "Running..." : "Run"}
+                                </Button>
+                                {folderScanStatus && (
+                                    <span
+                                        className={`text-xs ${folderScanStatus.type === "success"
+                                                ? "text-green-500"
+                                                : folderScanStatus.type === "error"
+                                                    ? "text-red-500"
+                                                    : "text-muted-foreground"
+                                            }`}
+                                    >
+                                        {folderScanStatus.message}
+                                    </span>
+                                )}
                             </div>
 
                             <div className="space-y-2 max-h-80 overflow-auto border rounded-md">

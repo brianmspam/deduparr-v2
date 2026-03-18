@@ -1,6 +1,6 @@
 import sqlite3
-from pathlib import Path
 from typing import Any
+
 
 class FolderStatsService:
     def __init__(self, plex_db_path: str):
@@ -10,10 +10,17 @@ class FolderStatsService:
         conn = sqlite3.connect(f"file:{self.db_path}?mode=ro", uri=True)
         conn.row_factory = sqlite3.Row
 
-        # Use media_parts.file to derive folders
+        # Derive folder by chopping off filename after last '/'
         query = """
         SELECT
-            substr(mp.file, 1, length(mp.file) - instr(reverse(mp.file), '/') + 1) AS folder,
+            SUBSTR(
+                mp.file,
+                1,
+                CASE INSTR(mp.file, '/', -1)
+                    WHEN 0 THEN LENGTH(mp.file)
+                    ELSE INSTR(mp.file, '/', -1) - 1
+                END
+            ) AS folder,
             COUNT(*) AS file_count
         FROM media_parts mp
         JOIN media_items mi ON mp.media_item_id = mi.id
