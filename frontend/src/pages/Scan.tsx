@@ -13,6 +13,7 @@ import {
   HardDrive,
   Clock,
 } from "lucide-react";
+import { useMutation } from "@tanstack/react-query";
 
 export default function Scan() {
   const queryClient = useQueryClient();
@@ -55,12 +56,33 @@ export default function Scan() {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (setId: number) => scanAPI.deleteSet(setId, false),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["duplicates"] });
-      queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
+    mutationFn: async () => {
+        const res = await fetch("/api/scan/delete", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+        });
+        const text = await res.text();
+        let data: any = null;
+        try {
+            data = text ? JSON.parse(text) : null;
+        } catch {
+            // non-JSON response, ignore parsing
+        }
+        if (!res.ok) {
+            throw new Error(data?.detail || "Delete failed");
+        }
+        return data;
     },
   });
+
+const handleStartDelete = () => {
+  const ok = window.confirm(
+    "Are you sure you want to delete all non-KEEP files from the current duplicate sets? This cannot be undone."
+  );
+  if (!ok) return;
+  deleteMutation.mutate();
+};
+
 
   const toggleKeepMutation = useMutation({
     mutationFn: ({
@@ -154,6 +176,27 @@ export default function Scan() {
               </>
             )}
           </Button>
+
+            <div className="flex gap-2">
+                {/* your existing scan buttons */}
+                <Button
+                    variant="destructive"
+                    onClick={handleStartDelete}
+                    disabled={deleteMutation.isPending}
+                >
+                    {deleteMutation.isPending ? "Deleting..." : "Start Delete"}
+                </Button>
+            </div>
+            {deleteMutation.isError && (
+                <p className="text-sm text-red-500 mt-1">
+                    {(deleteMutation.error as Error).message}
+                </p>
+            )}
+            {deleteMutation.isSuccess && (
+                <p className="text-sm text-green-500 mt-1">
+                    Delete completed.
+                </p>
+            )}
 
           {scanMutation.isSuccess && (
             <p className="text-sm text-success">
