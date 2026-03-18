@@ -4,6 +4,7 @@ Scan orchestrator — coordinates scanning via Plex API or SQLite direct query.
 
 import json
 import logging
+from pathlib import Path
 from typing import Any
 
 from sqlalchemy import delete, select
@@ -12,6 +13,7 @@ from sqlalchemy.orm import selectinload
 
 from app.models.duplicate import DuplicateFile, DuplicateSet, DuplicateStatus, MediaType
 from app.services.scoring_engine import ScoringEngine
+from app.services.plex_db_service import PlexDbService, LOCAL_PLEX_DB_DIR
 
 logger = logging.getLogger(__name__)
 
@@ -45,10 +47,29 @@ class ScanOrchestrator:
         db_path: str,
         library_names: list[str] | None = None,
     ) -> dict[str, Any]:
-        from app.services.plex_db_service import PlexDbService
+        """
+        Scan Plex SQLite DB for duplicates.
 
+        Prefers a local copy of the DB under /data/plex_db_local if present.
+        If not present, it will best-effort copy from the configured path,
+        then fall back to scanning the original path if the copy fails.
+        """
         service = PlexDbService(db_path)
         all_duplicates: list[dict[str, Any]] = []
+
+        # Prefer local copy if it exists
+        base_name = Path(db_path).name
+        local_db = LOCAL_PLEX_DB_DIR / base_name
+        if local_db.is_file():
+            service.db_path = str(local_db)
+            logger.info("Using existing local Plex DB copy at %s", service.db_path)
+        else:
+            # Best-effort attempt to copy to local
+            try:
+                local_path = service.copy_db_to_local()
+                logger.info("Copied Plex DB to local path for scan: %s", local_path)
+            except Exception as e:
+                logger.warning("Proceeding without local Plex DB copy: %s", e)
 
         if library_names:
             for lib_name in library_names:
@@ -69,7 +90,9 @@ class ScanOrchestrator:
             return {"sets_found": 0, "files_found": 0, "space_reclaimable": 0}
 
         # Score and rank
-        ranked = await self.scoring_engine.rank_all_groups(raw_duplicates, group_key="metadata_id")
+        ranked = await self.scoring_engine.rank_all_groups(
+            raw_duplicates, group_key="metadata_id"
+        )
 
         # Group by metadata_id for storing
         from collections import defaultdict
@@ -84,7 +107,11 @@ class ScanOrchestrator:
 
         for metadata_id, group_files in groups.items():
             first = group_files[0]
-            media_type = MediaType.MOVIE if first.get("media_type") == "movie" else MediaType.EPISODE
+            media_type = (
+                MediaType.MOVIE
+                if first.get("media_type") == "movie"
+                else MediaType.EPISODE
+            )
 
             # Check if set already exists
             result = await self.db.execute(
@@ -157,9 +184,7 @@ class ScanOrchestrator:
     async def get_scan_status(self) -> dict[str, Any]:
         from sqlalchemy import func
 
-        result = await self.db.execute(
-            select(func.count(DuplicateSet.id))
-        )
+        result = await self.db.execute(select(func.count(DuplicateSet.id)))
         total_sets = result.scalar() or 0
 
         result = await self.db.execute(
