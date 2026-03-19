@@ -1,18 +1,41 @@
 # app/services/folder_priority_service.py
 import os
 import sqlite3
-from typing import Any
+from typing import Any, Dict, List
 
 
 class FolderStatsService:
     def __init__(self, plex_db_path: str):
         self.db_path = plex_db_path
 
-    def get_folder_counts(self, min_count: int) -> list[dict[str, Any]]:
+    def _group_folder(self, file_path: str, group_level: int) -> str:
+        """
+        Group a file path by the first `group_level` path segments.
+
+        Example:
+          file_path = "/mnt/media/Movies/4K/MovieName/file.mkv"
+          group_level = 3  -> "/mnt/media/Movies"
+          group_level = 4  -> "/mnt/media/Movies/4K"
+        """
+        # Normalize and split on "/" (Plex DB paths are POSIX-like even on Windows)
+        parts = [p for p in file_path.split("/") if p]
+        if not parts:
+            return file_path
+
+        # Keep the first `group_level` parts
+        top_parts = parts[:group_level]
+        prefix = "/" if file_path.startswith("/") else ""
+        return prefix + "/".join(top_parts)
+
+    def get_folder_counts(
+        self,
+        min_count: int,
+        group_level: int = 3,
+    ) -> List[Dict[str, Any]]:
         conn = sqlite3.connect(f"file:{self.db_path}?mode=ro", uri=True)
         conn.row_factory = sqlite3.Row
 
-        # Just select the file paths; we’ll group by folder in Python
+        # Get file paths for all movie/episode media_parts
         query = """
         SELECT
             mp.file AS file_path
@@ -21,21 +44,22 @@ class FolderStatsService:
         JOIN metadata_items mdi ON mi.metadata_item_id = mdi.id
         WHERE mp.deleted_at IS NULL
           AND mi.deleted_at IS NULL
-          AND mdi.metadata_type IN (1, 4);  -- movies, episodes
+          AND mdi.metadata_type IN (1, 4);
         """
 
         cursor = conn.execute(query)
         rows = cursor.fetchall()
         conn.close()
 
-        # Group by folder
-        counts: dict[str, int] = {}
+        counts: Dict[str, int] = {}
+
         for r in rows:
             file_path = r["file_path"] or ""
-            folder = os.path.dirname(file_path) or file_path
-            counts[folder] = counts.get(folder, 0) + 1
+            # This determines which “top level” folder gets the count.
+            group_folder = self._group_folder(file_path, group_level)
+            counts[group_folder] = counts.get(group_folder, 0) + 1
 
-        # Filter by min_count and sort descending
+        # Filter and sort
         result = [
             {"folder": folder, "file_count": count}
             for folder, count in counts.items()
