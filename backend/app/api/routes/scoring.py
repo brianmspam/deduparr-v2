@@ -131,6 +131,7 @@ class FolderPriorityOut(BaseModel):
     path: str
     priority: str
     enabled: bool
+    file_count: int | None = None
 
     class Config:
         orm_mode = True
@@ -203,6 +204,7 @@ async def scan_folder_priorities(
                     path=path,
                     priority="medium",
                     enabled=True,
+                    file_count=count,
                 )
                 db.add(fp)
                 existing[path] = fp
@@ -210,6 +212,7 @@ async def scan_folder_priorities(
         for path, fp in existing.items():
             if path not in seen_paths:
                 fp.enabled = False
+                fp.file_count = None
 
         await db.commit()
 
