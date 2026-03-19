@@ -1,4 +1,4 @@
-﻿import { useState } from "react";
+﻿import { useState, useEffect } from "react";  // ✅ top of file
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { scanAPI, configAPI, type DuplicateSet } from "@/lib/api";
 import { formatBytes } from "@/lib/utils";
@@ -83,33 +83,7 @@ export default function Scan() {
         },
     });
 
-    // NEW: update set status (pending / approved / rejected)
-    const updateSetStatusMutation = useMutation({
-        mutationFn: ({
-            setId,
-            status,
-        }: {
-            setId: number;
-            status: "pending" | "approved" | "rejected";
-        }) => scanAPI.updateSetStatus(setId, status),
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ["duplicates"] });
-            queryClient.invalidateQueries({ queryKey: ["scan-status"] });
-        },
-    });
-
-    const toggleLib = (title: string) => {
-        setSelectedLibs((prev) =>
-            prev.includes(title) ? prev.filter((l) => l !== title) : [...prev, title]
-        );
-    };
-
-    const startBulkDelete = async () => {
-        const ok = window.confirm(
-            "Preview all non-KEEP files that will be deleted?"
-        );
-        if (!ok) return;
-
+    const refreshDeletionsPreview = async () => {
         try {
             setDeleteRunStatus("Loading preview...");
             const res = await fetch("/api/scan/delete/preview");
@@ -134,18 +108,42 @@ export default function Scan() {
                 )}`
             );
         } catch (err: any) {
-            setDeleteRunStatus(
-                `Preview failed: ${err?.message || String(err)}`
-            );
+            setDeleteRunStatus(`Preview failed: ${err?.message || String(err)}`);
         }
     };
 
-    const runBulkDelete = async () => {
-        const ok = window.confirm(
-            "Are you sure you want to delete all listed non-KEEP files? This cannot be undone."
-        );
-        if (!ok) return;
+    // ✅ single definition, with onSuccess auto-refresh
+    const updateSetStatusMutation = useMutation({
+        mutationFn: ({
+            setId,
+            status,
+        }: {
+            setId: number;
+            status: "pending" | "approved" | "rejected";
+        }) => scanAPI.updateSetStatus(setId, status),
+        onSuccess: (_data, variables) => {
+            queryClient.invalidateQueries({ queryKey: ["duplicates"] });
+            queryClient.invalidateQueries({ queryKey: ["scan-status"] });
+            if (variables.status === "approved") {
+                refreshDeletionsPreview();
+            }
+        },
+    });
 
+    // ✅ inside the component, after all state/mutations
+    useEffect(() => {
+        if (scanTab === "deletions") {
+            refreshDeletionsPreview();
+        }
+    }, [scanTab]);
+
+    const toggleLib = (title: string) => {
+        setSelectedLibs((prev) =>
+            prev.includes(title) ? prev.filter((l) => l !== title) : [...prev, title]
+        );
+    };
+
+    const runBulkDelete = async () => {
         try {
             setDeleteRunStatus("Deleting...");
             const res = await fetch("/api/scan/delete", {
@@ -172,9 +170,7 @@ export default function Scan() {
             queryClient.invalidateQueries({ queryKey: ["scan-status"] });
             queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
         } catch (err: any) {
-            setDeleteRunStatus(
-                `Delete failed: ${err?.message || String(err)}`
-            );
+            setDeleteRunStatus(`Delete failed: ${err?.message || String(err)}`);
         }
     };
 
@@ -192,7 +188,7 @@ export default function Scan() {
                         }`}
                 >
                     Duplicates
-        </button>
+                </button>
                 <button
                     onClick={() => setScanTab("deletions")}
                     className={`rounded-t-md px-3 py-1 text-sm font-medium ${scanTab === "deletions"
@@ -201,7 +197,7 @@ export default function Scan() {
                         }`}
                 >
                     Deletions
-        </button>
+                </button>
             </div>
 
             {/* Scan controls */}
@@ -210,11 +206,10 @@ export default function Scan() {
                     <CardTitle className="text-base">Scan Controls</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                    {/* Method selector */}
                     <div>
                         <label className="mb-2 block text-sm text-muted-foreground">
                             Scan Method
-            </label>
+                        </label>
                         <div className="flex gap-2">
                             <Button
                                 variant={method === "api" ? "default" : "outline"}
@@ -222,23 +217,22 @@ export default function Scan() {
                                 onClick={() => setMethod("api")}
                             >
                                 Plex API
-              </Button>
+                            </Button>
                             <Button
                                 variant={method === "sqlite" ? "default" : "outline"}
                                 size="sm"
                                 onClick={() => setMethod("sqlite")}
                             >
                                 SQLite Direct
-              </Button>
+                            </Button>
                         </div>
                     </div>
 
-                    {/* Library selection */}
                     {method === "api" && libraries && libraries.length > 0 && (
                         <div>
                             <label className="mb-2 block text-sm text-muted-foreground">
                                 Libraries (leave empty for all)
-              </label>
+                            </label>
                             <div className="flex flex-wrap gap-2">
                                 {libraries.map((lib) => (
                                     <button
@@ -264,19 +258,19 @@ export default function Scan() {
                             {scanMutation.isPending ? (
                                 <>
                                     <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-                  Scanning...
-                </>
+                                    Scanning...
+                                </>
                             ) : (
                                     <>
                                         <Search className="mr-2 h-4 w-4" />
-                  Start Scan
-                </>
+                                    Start Scan
+                                </>
                                 )}
                         </Button>
 
-                        <Button variant="destructive" onClick={startBulkDelete}>
+                        <Button variant="destructive" onClick={refreshDeletionsPreview}>
                             Start Delete
-            </Button>
+                        </Button>
                     </div>
 
                     {scanMutation.isSuccess && (
@@ -309,9 +303,7 @@ export default function Scan() {
                         <CardContent className="flex items-center gap-3 p-4">
                             <Clock className="h-5 w-5 text-warning" />
                             <div>
-                                <p className="text-lg font-bold">
-                                    {scanStatus.pending_sets ?? 0}
-                                </p>
+                                <p className="text-lg font-bold">{scanStatus.pending_sets ?? 0}</p>
                                 <p className="text-xs text-muted-foreground">Pending Review</p>
                             </div>
                         </CardContent>
@@ -323,9 +315,7 @@ export default function Scan() {
                                 <p className="text-lg font-bold">
                                     {formatBytes(scanStatus.space_reclaimable ?? 0)}
                                 </p>
-                                <p className="text-xs text-muted-foreground">
-                                    Space Reclaimable
-                </p>
+                                <p className="text-xs text-muted-foreground">Space Reclaimable</p>
                             </div>
                         </CardContent>
                     </Card>
@@ -364,20 +354,13 @@ export default function Scan() {
                             disabled={!duplicates?.items?.length}
                             onClick={() => {
                                 if (!duplicates?.items?.length) return;
-                                const ok = window.confirm(
-                                    `Approve all ${duplicates.items.length} visible sets?`
-                                );
-                                if (!ok) return;
                                 duplicates.items.forEach((set: DuplicateSet) => {
-                                    updateSetStatusMutation.mutate({
-                                        setId: set.id,
-                                        status: "approved",
-                                    });
+                                    updateSetStatusMutation.mutate({ setId: set.id, status: "approved" });
                                 });
                             }}
                         >
                             Approve All Visible
-            </Button>
+                        </Button>
                     </div>
 
                     {/* Duplicate list */}
@@ -386,8 +369,7 @@ export default function Scan() {
                     ) : duplicates?.items && duplicates.items.length > 0 ? (
                         <div className="space-y-3">
                             <p className="text-sm text-muted-foreground">
-                                {duplicates.total} duplicate set
-                {duplicates.total !== 1 ? "s" : ""}
+                                {duplicates.total} duplicate set{duplicates.total !== 1 ? "s" : ""}
                             </p>
                             {duplicates.items.map((set: DuplicateSet) => (
                                 <DuplicateCard
@@ -408,7 +390,7 @@ export default function Scan() {
                                         <Search className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
                                         <p className="text-muted-foreground">
                                             No duplicates found. Run a scan to detect duplicate files.
-                </p>
+                                </p>
                                     </CardContent>
                                 </Card>
                             )}
@@ -429,7 +411,7 @@ export default function Scan() {
                                 disabled={deletions.length === 0}
                             >
                                 Run Delete
-              </Button>
+                            </Button>
                             {deleteRunStatus && (
                                 <span className="text-xs text-muted-foreground">
                                     {deleteRunStatus}
@@ -440,8 +422,7 @@ export default function Scan() {
                         <div className="max-h-96 overflow-auto border rounded-md">
                             {deletions.length === 0 ? (
                                 <p className="p-3 text-sm text-muted-foreground">
-                                    No files queued. Click Start Delete on the Duplicates tab to
-                                    load a preview.
+                                    No files queued. Approve sets on the Duplicates tab to populate this list.
                                 </p>
                             ) : (
                                     deletions.map((d) => (
@@ -460,13 +441,9 @@ export default function Scan() {
                                                     {formatBytes(d.file_size)}
                                                 </span>
                                                 {d.status === "deleted" ? (
-                                                    <span className="text-green-500 text-xs font-semibold">
-                                                        ✓
-                                                    </span>
+                                                    <span className="text-green-500 text-xs font-semibold">✓</span>
                                                 ) : (
-                                                        <span className="text-yellow-500 text-xs font-semibold">
-                                                            …
-                                                        </span>
+                                                        <span className="text-yellow-500 text-xs font-semibold">…</span>
                                                     )}
                                             </div>
                                         </div>
