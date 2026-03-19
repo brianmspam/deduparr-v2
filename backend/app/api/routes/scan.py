@@ -261,7 +261,6 @@ async def preview_bulk_delete(db: AsyncSession = Depends(get_db)):
     """
     from app.services.deletion_pipeline import DeletionPipeline
 
-    # Load sets with status pending or approved
     result = await db.execute(
         select(DuplicateSet)
         .options(selectinload(DuplicateSet.files))
@@ -284,7 +283,16 @@ async def preview_bulk_delete(db: AsyncSession = Depends(get_db)):
             continue
 
         preview = await pipeline.preview_deletion(dup_set.id)
-        for f in preview["files_to_delete"]:
+
+        # Handle different possible shapes of preview output
+        files_section = (
+            preview.get("files_to_delete")
+            or preview.get("files")
+            or []
+        )
+        space_to_free = preview.get("space_to_free") or 0
+
+        for f in files_section:
             items.append(
                 {
                     "id": f["id"],
@@ -294,7 +302,7 @@ async def preview_bulk_delete(db: AsyncSession = Depends(get_db)):
                     "file_size": f["file_size"],
                 }
             )
-        total_space += preview["space_to_free"]
+        total_space += space_to_free
 
     return {
         "items": items,
