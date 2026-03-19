@@ -11,6 +11,8 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from sqlalchemy.orm import selectinload
+
 from app.api.deps import get_db
 from app.models.config import Config
 from app.models.duplicate import DuplicateFile, DuplicateSet, DuplicateStatus
@@ -247,45 +249,58 @@ class BulkDeletePreviewResponse(BaseModel):
     total_files: int
     total_space_to_free: int
 
-@router.get("/delete/preview", response_model=BulkDeletePreviewResponse)
+
+@router.get("/delete/preview")
 async def preview_bulk_delete(db: AsyncSession = Depends(get_db)):
     """
-    Combined preview of all files that would be deleted by the bulk 'Start Delete'.
+    Combined preview of all files that would be deleted by bulk 'Start Delete'.
+
+    Rules:
+      - Include sets with status PENDING or APPROVED.
+      - Within those sets, delete files where keep == False.
     """
     from app.services.deletion_pipeline import DeletionPipeline
 
-    # Choose which sets to act on, e.g. all APPROVED
+    # Load sets with status pending or approved
     result = await db.execute(
-        select(DuplicateSet.id, DuplicateSet.title).where(
-            DuplicateSet.status == DuplicateStatus.APPROVED
+        select(DuplicateSet)
+        .options(selectinload(DuplicateSet.files))
+        .where(
+            DuplicateSet.status.in_(
+                [DuplicateStatus.PENDING, DuplicateStatus.APPROVED]
+            )
         )
     )
-    rows = result.fetchall()
+    sets = result.scalars().unique().all()
 
     pipeline = DeletionPipeline(db, dry_run=True)
 
-    items: list[BulkDeleteFile] = []
+    items: list[dict] = []
     total_space = 0
 
-    for set_id, title in rows:
-        preview = await pipeline.preview_deletion(set_id)
+    for dup_set in sets:
+        # Skip sets where all files are KEEP
+        if not any(not f.keep for f in dup_set.files):
+            continue
+
+        preview = await pipeline.preview_deletion(dup_set.id)
         for f in preview["files_to_delete"]:
             items.append(
-                BulkDeleteFile(
-                    id=f["id"],
-                    set_id=set_id,
-                    title=title,
-                    file_path=f["file_path"],
-                    file_size=f["file_size"],
-                )
+                {
+                    "id": f["id"],
+                    "set_id": dup_set.id,
+                    "title": dup_set.title,
+                    "file_path": f["file_path"],
+                    "file_size": f["file_size"],
+                }
             )
         total_space += preview["space_to_free"]
 
-    return BulkDeletePreviewResponse(
-        items=items,
-        total_files=len(items),
-        total_space_to_free=total_space,
-    )
+    return {
+        "items": items,
+        "total_files": len(items),
+        "total_space_to_free": total_space,
+    }
 
 class BulkDeleteResult(BaseModel):
     status: str
@@ -304,8 +319,12 @@ async def delete_all_non_keep_files(
     from app.services.deletion_pipeline import DeletionPipeline
 
     result = await db.execute(
-        select(DuplicateSet.id).where(DuplicateSet.status == DuplicateStatus.APPROVED)
-    )
+      select(DuplicateSet.id).where(
+          DuplicateSet.status.in_(
+              [DuplicateStatus.PENDING, DuplicateStatus.APPROVED]
+          )
+        )
+      )
     set_ids = [row[0] for row in result.fetchall()]
 
     if not set_ids:
