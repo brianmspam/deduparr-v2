@@ -1,4 +1,4 @@
-import { useState } from "react";
+﻿import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { scanAPI, configAPI, type DuplicateSet } from "@/lib/api";
 import { formatBytes } from "@/lib/utils";
@@ -14,12 +14,26 @@ import {
     Clock,
 } from "lucide-react";
 
+type DeletionItem = {
+    id: number;
+    set_id: number;
+    title: string;
+    file_path: string;
+    file_size: number;
+    status: "pending" | "deleted";
+};
+
 export default function Scan() {
     const queryClient = useQueryClient();
     const [method, setMethod] = useState<"api" | "sqlite">("api");
     const [selectedLibs, setSelectedLibs] = useState<string[]>([]);
     const [statusFilter, setStatusFilter] = useState<string>("");
     const [mediaFilter, setMediaFilter] = useState<string>("");
+
+    // tab: duplicates vs deletions
+    const [scanTab, setScanTab] = useState<"duplicates" | "deletions">("duplicates");
+    const [deletions, setDeletions] = useState<DeletionItem[]>([]);
+    const [deleteRunStatus, setDeleteRunStatus] = useState<string | null>(null);
 
     const { data: libraries } = useQuery({
         queryKey: ["plex-libraries"],
@@ -54,40 +68,6 @@ export default function Scan() {
         },
     });
 
-    // Delete all non-KEEP files mutation
-    const deleteAllMutation = useMutation({
-        mutationFn: async () => {
-            const res = await fetch("/api/scan/delete", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-            });
-            const text = await res.text();
-            let data: any = null;
-            try {
-                data = text ? JSON.parse(text) : null;
-            } catch {
-                // non-JSON response, ignore parsing
-            }
-            if (!res.ok) {
-                throw new Error(data?.detail || "Delete failed");
-            }
-            return data;
-        },
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ["duplicates"] });
-            queryClient.invalidateQueries({ queryKey: ["scan-status"] });
-            queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
-        },
-    });
-
-    const handleStartDelete = () => {
-        const ok = window.confirm(
-            "Are you sure you want to delete all non-KEEP files from the current duplicate sets? This cannot be undone."
-        );
-        if (!ok) return;
-        deleteAllMutation.mutate();
-    };
-
     const toggleKeepMutation = useMutation({
         mutationFn: ({
             setId,
@@ -110,11 +90,108 @@ export default function Scan() {
         );
     };
 
+    // Load bulk delete preview and switch to Deletions tab
+    const startBulkDelete = async () => {
+        const ok = window.confirm(
+            "Preview all non-KEEP files that will be deleted?"
+        );
+        if (!ok) return;
+
+        try {
+            setDeleteRunStatus("Loading preview...");
+            const res = await fetch("/api/scan/delete/preview");
+            const text = await res.text();
+            const data = text ? JSON.parse(text) : { items: [], total_files: 0, total_space_to_free: 0 };
+
+            const items: DeletionItem[] = (data.items || []).map((f: any) => ({
+                id: f.id,
+                set_id: f.set_id,
+                title: f.title,
+                file_path: f.file_path,
+                file_size: f.file_size,
+                status: "pending",
+            }));
+            setDeletions(items);
+            setScanTab("deletions");
+            setDeleteRunStatus(
+                `Ready: ${data.total_files} files, will free ${formatBytes(
+                    data.total_space_to_free || 0
+                )}`
+            );
+        } catch (err: any) {
+            setDeleteRunStatus(
+                `Preview failed: ${err?.message || String(err)}`
+            );
+        }
+    };
+
+    // Run bulk delete and mark items as deleted
+    const runBulkDelete = async () => {
+        const ok = window.confirm(
+            "Are you sure you want to delete all listed non-KEEP files? This cannot be undone."
+        );
+        if (!ok) return;
+
+        try {
+            setDeleteRunStatus("Deleting...");
+            const res = await fetch("/api/scan/delete", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+            });
+            const text = await res.text();
+            const data = text ? JSON.parse(text) : null;
+            if (!res.ok) {
+                throw new Error(data?.detail || `Delete failed (${res.status})`);
+            }
+            const deletedIds = new Set<number>(data?.deleted_file_ids || []);
+            setDeletions((items) =>
+                items.map((item) =>
+                    deletedIds.has(item.id) ? { ...item, status: "deleted" } : item
+                )
+            );
+            setDeleteRunStatus(
+                `Deleted ${data?.deleted_files ?? 0} files, freed ${formatBytes(
+                    data?.space_freed ?? 0
+                )}`
+            );
+            // refresh stats/duplicates after delete
+            queryClient.invalidateQueries({ queryKey: ["duplicates"] });
+            queryClient.invalidateQueries({ queryKey: ["scan-status"] });
+            queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
+        } catch (err: any) {
+            setDeleteRunStatus(
+                `Delete failed: ${err?.message || String(err)}`
+            );
+        }
+    };
+
     return (
         <div className="space-y-6">
             <h1 className="text-2xl font-bold">Scan & Duplicates</h1>
 
-            {/* Scan controls */}
+            {/* Local tabs for Duplicates / Deletions */}
+            <div className="flex gap-2 border-b pb-2">
+                <button
+                    onClick={() => setScanTab("duplicates")}
+                    className={`rounded-t-md px-3 py-1 text-sm font-medium ${scanTab === "duplicates"
+                            ? "bg-primary/10 text-primary"
+                            : "text-muted-foreground hover:text-foreground"
+                        }`}
+                >
+                    Duplicates
+        </button>
+                <button
+                    onClick={() => setScanTab("deletions")}
+                    className={`rounded-t-md px-3 py-1 text-sm font-medium ${scanTab === "deletions"
+                            ? "bg-primary/10 text-primary"
+                            : "text-muted-foreground hover:text-foreground"
+                        }`}
+                >
+                    Deletions
+        </button>
+            </div>
+
+            {/* Scan controls (always visible) */}
             <Card>
                 <CardHeader>
                     <CardTitle className="text-base">Scan Controls</CardTitle>
@@ -186,21 +263,11 @@ export default function Scan() {
 
                         <Button
                             variant="destructive"
-                            onClick={handleStartDelete}
-                            disabled={deleteAllMutation.isPending}
+                            onClick={startBulkDelete}
                         >
-                            {deleteAllMutation.isPending ? "Deleting..." : "Start Delete"}
-                        </Button>
+                            Start Delete
+            </Button>
                     </div>
-
-                    {deleteAllMutation.isError && (
-                        <p className="mt-1 text-sm text-red-500">
-                            {(deleteAllMutation.error as Error).message}
-                        </p>
-                    )}
-                    {deleteAllMutation.isSuccess && (
-                        <p className="mt-1 text-sm text-green-500">Delete completed.</p>
-                    )}
 
                     {scanMutation.isSuccess && (
                         <p className="text-sm text-success">
@@ -255,59 +322,126 @@ export default function Scan() {
                 </div>
             )}
 
-            {/* Filters */}
-            <div className="flex flex-wrap items-center gap-3">
-                <Filter className="h-4 w-4 text-muted-foreground" />
-                <select
-                    value={statusFilter}
-                    onChange={(e) => setStatusFilter(e.target.value)}
-                    className="rounded-md border bg-transparent px-3 py-1.5 text-sm"
-                >
-                    <option value="">All Statuses</option>
-                    <option value="pending">Pending</option>
-                    <option value="approved">Approved</option>
-                    <option value="processed">Processed</option>
-                    <option value="rejected">Rejected</option>
-                </select>
-                <select
-                    value={mediaFilter}
-                    onChange={(e) => setMediaFilter(e.target.value)}
-                    className="rounded-md border bg-transparent px-3 py-1.5 text-sm"
-                >
-                    <option value="">All Media</option>
-                    <option value="movie">Movies</option>
-                    <option value="episode">Episodes</option>
-                </select>
-            </div>
+            {scanTab === "duplicates" && (
+                <>
+                    {/* Filters */}
+                    <div className="flex flex-wrap items-center gap-3">
+                        <Filter className="h-4 w-4 text-muted-foreground" />
+                        <select
+                            value={statusFilter}
+                            onChange={(e) => setStatusFilter(e.target.value)}
+                            className="rounded-md border bg-transparent px-3 py-1.5 text-sm"
+                        >
+                            <option value="">All Statuses</option>
+                            <option value="pending">Pending</option>
+                            <option value="approved">Approved</option>
+                            <option value="processed">Processed</option>
+                            <option value="rejected">Rejected</option>
+                        </select>
+                        <select
+                            value={mediaFilter}
+                            onChange={(e) => setMediaFilter(e.target.value)}
+                            className="rounded-md border bg-transparent px-3 py-1.5 text-sm"
+                        >
+                            <option value="">All Media</option>
+                            <option value="movie">Movies</option>
+                            <option value="episode">Episodes</option>
+                        </select>
+                    </div>
 
-            {/* Duplicate list */}
-            {loadingDups ? (
-                <p className="text-muted-foreground">Loading duplicates...</p>
-            ) : duplicates?.items && duplicates.items.length > 0 ? (
-                <div className="space-y-3">
-                    <p className="text-sm text-muted-foreground">
-                        {duplicates.total} duplicate set{duplicates.total !== 1 ? "s" : ""}
-                    </p>
-                    {duplicates.items.map((set: DuplicateSet) => (
-                        <DuplicateCard
-                            key={set.id}
-                            set={set}
-                            onToggleKeep={(setId, fileId, keep) =>
-                                toggleKeepMutation.mutate({ setId, fileId, keep })
-                            }
-                        />
-                    ))}
-                </div>
-            ) : (
-                        <Card>
-                            <CardContent className="py-12 text-center">
-                                <Search className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
-                                <p className="text-muted-foreground">
-                                    No duplicates found. Run a scan to detect duplicate files.
-            </p>
-                            </CardContent>
-                        </Card>
-                    )}
+                    {/* Duplicate list */}
+                    {loadingDups ? (
+                        <p className="text-muted-foreground">Loading duplicates...</p>
+                    ) : duplicates?.items && duplicates.items.length > 0 ? (
+                        <div className="space-y-3">
+                            <p className="text-sm text-muted-foreground">
+                                {duplicates.total} duplicate set
+                {duplicates.total !== 1 ? "s" : ""}
+                            </p>
+                            {duplicates.items.map((set: DuplicateSet) => (
+                                <DuplicateCard
+                                    key={set.id}
+                                    set={set}
+                                    onToggleKeep={(setId, fileId, keep) =>
+                                        toggleKeepMutation.mutate({ setId, fileId, keep })
+                                    }
+                                />
+                            ))}
+                        </div>
+                    ) : (
+                                <Card>
+                                    <CardContent className="py-12 text-center">
+                                        <Search className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
+                                        <p className="text-muted-foreground">
+                                            No duplicates found. Run a scan to detect duplicate files.
+                </p>
+                                    </CardContent>
+                                </Card>
+                            )}
+                </>
+            )}
+
+            {scanTab === "deletions" && (
+                <Card>
+                    <CardHeader>
+                        <CardTitle className="text-base">Deletion Progress</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                        <div className="flex items-center gap-2">
+                            <Button
+                                size="sm"
+                                variant="destructive"
+                                onClick={runBulkDelete}
+                                disabled={deletions.length === 0}
+                            >
+                                Run Delete
+              </Button>
+                            {deleteRunStatus && (
+                                <span className="text-xs text-muted-foreground">
+                                    {deleteRunStatus}
+                                </span>
+                            )}
+                        </div>
+
+                        <div className="max-h-96 overflow-auto border rounded-md">
+                            {deletions.length === 0 ? (
+                                <p className="p-3 text-sm text-muted-foreground">
+                                    No files queued. Click Start Delete on the Duplicates tab to
+                                    load a preview.
+                                </p>
+                            ) : (
+                                    deletions.map((d) => (
+                                        <div
+                                            key={d.id}
+                                            className="flex items-center justify-between border-b px-3 py-2 text-sm"
+                                        >
+                                            <div className="flex-1 truncate">
+                                                <div className="font-medium truncate">{d.title}</div>
+                                                <div className="font-mono text-xs truncate text-muted-foreground">
+                                                    {d.file_path}
+                                                </div>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-xs text-muted-foreground">
+                                                    {formatBytes(d.file_size)}
+                                                </span>
+                                                {d.status === "deleted" ? (
+                                                    <span className="text-green-500 text-xs font-semibold">
+                                                        ✓
+                                                    </span>
+                                                ) : (
+                                                        <span className="text-yellow-500 text-xs font-semibold">
+                                                            …
+                                                        </span>
+                                                    )}
+                                            </div>
+                                        </div>
+                                    ))
+                                )}
+                        </div>
+                    </CardContent>
+                </Card>
+            )}
         </div>
     );
 }

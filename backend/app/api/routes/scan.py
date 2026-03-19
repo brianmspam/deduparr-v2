@@ -3,6 +3,7 @@
 import json
 import logging
 from typing import Optional
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -189,3 +190,147 @@ async def update_file_keep_flag(
     await db.commit()
 
     return {"id": dup_file.id, "keep": dup_file.keep}
+
+@router.post("/delete")
+async def delete_all_non_keep_files(
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Bulk delete: for all duplicate sets, call the existing per-set delete endpoint logic.
+    This is what the 'Start Delete' button calls.
+    """
+    from app.services.deletion_pipeline import DeletionPipeline
+
+    # Decide which sets to process. Example: all sets with status APPROVED.
+    result = await db.execute(
+        select(DuplicateSet.id).where(DuplicateSet.status == DuplicateStatus.APPROVED)
+    )
+    set_ids = [row[0] for row in result.fetchall()]
+
+    if not set_ids:
+        return {
+            "status": "ok",
+            "deleted_sets": 0,
+            "deleted_files": 0,
+            "space_freed": 0,
+        }
+
+    pipeline = DeletionPipeline(db, dry_run=False)
+
+    total_deleted_sets = 0
+    total_deleted_files = 0
+    total_space_freed = 0
+
+    for set_id in set_ids:
+        # Reuse the same logic as /duplicates/{set_id}/delete
+        res = await pipeline.delete_set(set_id)
+        total_deleted_sets += 1
+        total_deleted_files += res.get("deleted_files", 0)
+        total_space_freed += res.get("space_freed", 0)
+
+    return {
+        "status": "ok",
+        "deleted_sets": total_deleted_sets,
+        "deleted_files": total_deleted_files,
+        "space_freed": total_space_freed,
+    }
+
+class BulkDeleteFile(BaseModel):
+    id: int
+    set_id: int
+    title: str
+    file_path: str
+    file_size: int
+
+class BulkDeletePreviewResponse(BaseModel):
+    items: list[BulkDeleteFile]
+    total_files: int
+    total_space_to_free: int
+
+@router.get("/delete/preview", response_model=BulkDeletePreviewResponse)
+async def preview_bulk_delete(db: AsyncSession = Depends(get_db)):
+    """
+    Combined preview of all files that would be deleted by the bulk 'Start Delete'.
+    """
+    from app.services.deletion_pipeline import DeletionPipeline
+
+    # Choose which sets to act on, e.g. all APPROVED
+    result = await db.execute(
+        select(DuplicateSet.id, DuplicateSet.title).where(
+            DuplicateSet.status == DuplicateStatus.APPROVED
+        )
+    )
+    rows = result.fetchall()
+
+    pipeline = DeletionPipeline(db, dry_run=True)
+
+    items: list[BulkDeleteFile] = []
+    total_space = 0
+
+    for set_id, title in rows:
+        preview = await pipeline.preview_deletion(set_id)
+        for f in preview["files_to_delete"]:
+            items.append(
+                BulkDeleteFile(
+                    id=f["id"],
+                    set_id=set_id,
+                    title=title,
+                    file_path=f["file_path"],
+                    file_size=f["file_size"],
+                )
+            )
+        total_space += preview["space_to_free"]
+
+    return BulkDeletePreviewResponse(
+        items=items,
+        total_files=len(items),
+        total_space_to_free=total_space,
+    )
+
+class BulkDeleteResult(BaseModel):
+    status: str
+    deleted_files: int
+    space_freed: int
+    deleted_file_ids: list[int]
+
+
+@router.post("/delete", response_model=BulkDeleteResult)
+async def delete_all_non_keep_files(
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Run bulk delete across all selected duplicate sets.
+    """
+    from app.services.deletion_pipeline import DeletionPipeline
+
+    result = await db.execute(
+        select(DuplicateSet.id).where(DuplicateSet.status == DuplicateStatus.APPROVED)
+    )
+    set_ids = [row[0] for row in result.fetchall()]
+
+    if not set_ids:
+        return BulkDeleteResult(
+            status="ok",
+            deleted_files=0,
+            space_freed=0,
+            deleted_file_ids=[],
+        )
+
+    pipeline = DeletionPipeline(db, dry_run=False)
+
+    deleted_files = 0
+    space_freed = 0
+    deleted_file_ids: list[int] = []
+
+    for set_id in set_ids:
+        res: dict[str, Any] = await pipeline.delete_set(set_id)
+        deleted_files += res.get("deleted_files", 0)
+        space_freed += res.get("space_freed", 0)
+        deleted_file_ids.extend(res.get("deleted_file_ids", []))
+
+    return BulkDeleteResult(
+        status="ok",
+        deleted_files=deleted_files,
+        space_freed=space_freed,
+        deleted_file_ids=deleted_file_ids,
+    )
