@@ -83,7 +83,8 @@ async def _migrate_tables(conn):
         ("duplicate_sets", "scan_method", "VARCHAR(50)"),
         ("duplicate_sets", "space_to_reclaim", "INTEGER DEFAULT 0"),
         ("duplicate_files", "file_metadata", "TEXT"),
-        ("folder_priority", "file_count", "INTEGER")
+        ("folder_priority", "file_count", "INTEGER"),
+        ("deletion_history", "deleted_from_qbit", "BOOLEAN NOT NULL DEFAULT 0"),
     ]
 
     for table, column, col_type in migrations:
