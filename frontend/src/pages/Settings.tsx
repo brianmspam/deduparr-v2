@@ -180,7 +180,12 @@ export default function Settings() {
         if (tab === "scoring") {
             scoringAPI
                 .listFolderPriority()
-                .then((data) => setFolders(data))
+                .then((data) => {
+                    const sorted = [...data].sort(
+                        (a, b) => (b.file_count ?? 0) - (a.file_count ?? 0)
+                    );
+                    setFolders(sorted);
+                })
                 .catch(() => { });
         }
     }, [tab]);
