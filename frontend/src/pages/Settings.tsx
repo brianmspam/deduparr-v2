@@ -602,6 +602,11 @@ export default function Settings() {
                                             >
                                                 <div className="flex-1 truncate">
                                                     <span className="font-mono">{f.path}</span>
+                                                    {typeof f.file_count === "number" && (
+                                                        <span className="ml-2 text-xs text-muted-foreground">
+                                                            ({f.file_count} files)
+                                                        </span>
+                                                    )}
                                                 </div>
                                                 <div className="flex items-center gap-2">
                                                     <select
