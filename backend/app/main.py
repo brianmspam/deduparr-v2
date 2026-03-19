@@ -36,9 +36,6 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     """Startup and shutdown lifecycle."""
     await init_db()
-    # new: run migrations
-    import subprocess
-    subprocess.check_call(["alembic", "upgrade", "head"])
 
     # Best-effort: copy Plex DB to local on startup using configured plex_db_path
     async with AsyncSessionLocal() as session:
