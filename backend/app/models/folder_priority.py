@@ -9,3 +9,4 @@ class FolderPriority(Base):
     # "high", "medium", "low"
     priority = Column(String, nullable=False, default="medium")
     enabled = Column(Boolean, nullable=False, default=True)
+    #file_count = Column(Integer, nullable=False, default=0)

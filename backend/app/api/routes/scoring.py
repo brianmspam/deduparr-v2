@@ -213,10 +213,12 @@ async def scan_folder_priorities(
 
         await db.commit()
 
+        # after rows = stats_service.get_folder_counts(min_count)
+        file_count_map: dict[str, int] = {r["folder"]: r["file_count"] for r in rows}
+        
         refreshed = await db.execute(select(FolderPriority).order_by(FolderPriority.path))
         all_folders = refreshed.scalars().all()
 
-        file_count_map: dict[str, int] = {r["folder"]: r["file_count"] for r in rows}
         return {
             "folders": [
                 {

@@ -193,12 +193,12 @@ export default function Settings() {
     const handleRunFolderScan = async () => {
         try {
             setFolderScanStatus({ type: "running", message: "Scanning Plex DB..." });
-            await scoringAPI.scanFolderPriority(minFolderCount);
-            const list = await scoringAPI.listFolderPriority();
+            const data = await scoringAPI.scanFolderPriority(minFolderCount);
+            const list = data?.folders ?? [];
             const sorted = [...list].sort(
                 (a, b) => (b.file_count ?? 0) - (a.file_count ?? 0)
             );
-            setFolders(sorted);
+            setFolders(sorted as FolderPriorityRow[]);
             setFolderScanStatus({
                 type: "success",
                 message: `Scan completed: ${sorted.length} folders loaded`,
