@@ -256,19 +256,14 @@ async def preview_bulk_delete(db: AsyncSession = Depends(get_db)):
     Combined preview of all files that would be deleted by bulk 'Start Delete'.
 
     Rules:
-      - Include sets with status PENDING or APPROVED.
-      - Within those sets, delete files where keep == False.
+      - Ignore set status.
+      - In each duplicate set, delete files where keep == False.
     """
     from app.services.deletion_pipeline import DeletionPipeline
 
     result = await db.execute(
         select(DuplicateSet)
         .options(selectinload(DuplicateSet.files))
-        .where(
-            DuplicateSet.status.in_(
-                [DuplicateStatus.PENDING, DuplicateStatus.APPROVED]
-            )
-        )
     )
     sets = result.scalars().unique().all()
 
@@ -284,7 +279,7 @@ async def preview_bulk_delete(db: AsyncSession = Depends(get_db)):
 
         preview = await pipeline.preview_deletion(dup_set.id)
 
-        # Handle different possible shapes of preview output
+        # Match whatever shape preview_deletion returns
         files_section = (
             preview.get("files_to_delete")
             or preview.get("files")
