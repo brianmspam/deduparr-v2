@@ -1,5 +1,4 @@
 # app/services/folder_priority_service.py
-import os
 import sqlite3
 from typing import Any, Dict, List
 
@@ -8,34 +7,28 @@ class FolderStatsService:
     def __init__(self, plex_db_path: str):
         self.db_path = plex_db_path
 
-    def _group_folder(self, file_path: str, group_level: int) -> str:
+    def _group_by_third_segment(self, file_path: str) -> str:
         """
-        Group a file path by the first `group_level` path segments.
+        Group by the first 3 path segments.
 
         Example:
-          file_path = "/mnt/media/Movies/4K/MovieName/file.mkv"
-          group_level = 3  -> "/mnt/media/Movies"
-          group_level = 4  -> "/mnt/media/Movies/4K"
+          /FTP_Input/Plex/MovieLibrary/Zombieland (2009)/file.mkv
+          -> /FTP_Input/Plex/MovieLibrary
         """
-        # Normalize and split on "/" (Plex DB paths are POSIX-like even on Windows)
+        # Plex stores POSIX-style paths even for Windows sources
         parts = [p for p in file_path.split("/") if p]
         if not parts:
             return file_path
 
-        # Keep the first `group_level` parts
-        top_parts = parts[:group_level]
+        # Take first 3 segments; if fewer, take all
+        top_parts = parts[:3]
         prefix = "/" if file_path.startswith("/") else ""
         return prefix + "/".join(top_parts)
 
-    def get_folder_counts(
-        self,
-        min_count: int,
-        group_level: int = 3,
-    ) -> List[Dict[str, Any]]:
+    def get_folder_counts(self, min_count: int) -> List[Dict[str, Any]]:
         conn = sqlite3.connect(f"file:{self.db_path}?mode=ro", uri=True)
         conn.row_factory = sqlite3.Row
 
-        # Get file paths for all movie/episode media_parts
         query = """
         SELECT
             mp.file AS file_path
@@ -55,11 +48,9 @@ class FolderStatsService:
 
         for r in rows:
             file_path = r["file_path"] or ""
-            # This determines which “top level” folder gets the count.
-            group_folder = self._group_folder(file_path, group_level)
-            counts[group_folder] = counts.get(group_folder, 0) + 1
+            folder = self._group_by_third_segment(file_path)
+            counts[folder] = counts.get(folder, 0) + 1
 
-        # Filter and sort
         result = [
             {"folder": folder, "file_count": count}
             for folder, count in counts.items()
