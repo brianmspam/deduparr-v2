@@ -356,3 +356,26 @@ async def delete_all_non_keep_files(
         space_freed=space_freed,
         deleted_file_ids=deleted_file_ids,
     )
+
+
+class SetStatusUpdate(BaseModel):
+    status: str  # "pending" | "approved" | "rejected" | "processed"
+
+@router.patch("/duplicates/{set_id}/status")
+async def update_set_status(
+    set_id: int,
+    body: SetStatusUpdate,
+    db: AsyncSession = Depends(get_db),
+):
+    """Update approval status for a duplicate set."""
+    result = await db.execute(
+        select(DuplicateSet).where(DuplicateSet.id == set_id)
+    )
+    dup_set = result.scalar_one_or_none()
+    if not dup_set:
+        raise HTTPException(status_code=404, detail="Set not found")
+
+    # If you use an Enum, map string -> enum here; for now assume stored as string
+    dup_set.status = body.status
+    await db.commit()
+    return {"id": dup_set.id, "status": dup_set.status}

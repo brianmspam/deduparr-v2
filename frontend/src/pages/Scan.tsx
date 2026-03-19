@@ -30,7 +30,6 @@ export default function Scan() {
     const [statusFilter, setStatusFilter] = useState<string>("");
     const [mediaFilter, setMediaFilter] = useState<string>("");
 
-    // tab: duplicates vs deletions
     const [scanTab, setScanTab] = useState<"duplicates" | "deletions">("duplicates");
     const [deletions, setDeletions] = useState<DeletionItem[]>([]);
     const [deleteRunStatus, setDeleteRunStatus] = useState<string | null>(null);
@@ -84,13 +83,27 @@ export default function Scan() {
         },
     });
 
+    // NEW: update set status (pending / approved / rejected)
+    const updateSetStatusMutation = useMutation({
+        mutationFn: ({
+            setId,
+            status,
+        }: {
+            setId: number;
+            status: "pending" | "approved" | "rejected";
+        }) => scanAPI.updateSetStatus(setId, status),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ["duplicates"] });
+            queryClient.invalidateQueries({ queryKey: ["scan-status"] });
+        },
+    });
+
     const toggleLib = (title: string) => {
         setSelectedLibs((prev) =>
             prev.includes(title) ? prev.filter((l) => l !== title) : [...prev, title]
         );
     };
 
-    // Load bulk delete preview and switch to Deletions tab
     const startBulkDelete = async () => {
         const ok = window.confirm(
             "Preview all non-KEEP files that will be deleted?"
@@ -101,7 +114,9 @@ export default function Scan() {
             setDeleteRunStatus("Loading preview...");
             const res = await fetch("/api/scan/delete/preview");
             const text = await res.text();
-            const data = text ? JSON.parse(text) : { items: [], total_files: 0, total_space_to_free: 0 };
+            const data = text
+                ? JSON.parse(text)
+                : { items: [], total_files: 0, total_space_to_free: 0 };
 
             const items: DeletionItem[] = (data.items || []).map((f: any) => ({
                 id: f.id,
@@ -125,7 +140,6 @@ export default function Scan() {
         }
     };
 
-    // Run bulk delete and mark items as deleted
     const runBulkDelete = async () => {
         const ok = window.confirm(
             "Are you sure you want to delete all listed non-KEEP files? This cannot be undone."
@@ -154,7 +168,6 @@ export default function Scan() {
                     data?.space_freed ?? 0
                 )}`
             );
-            // refresh stats/duplicates after delete
             queryClient.invalidateQueries({ queryKey: ["duplicates"] });
             queryClient.invalidateQueries({ queryKey: ["scan-status"] });
             queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
@@ -191,7 +204,7 @@ export default function Scan() {
         </button>
             </div>
 
-            {/* Scan controls (always visible) */}
+            {/* Scan controls */}
             <Card>
                 <CardHeader>
                     <CardTitle className="text-base">Scan Controls</CardTitle>
@@ -220,7 +233,7 @@ export default function Scan() {
                         </div>
                     </div>
 
-                    {/* Library selection (API method only) */}
+                    {/* Library selection */}
                     {method === "api" && libraries && libraries.length > 0 && (
                         <div>
                             <label className="mb-2 block text-sm text-muted-foreground">
@@ -261,10 +274,7 @@ export default function Scan() {
                                 )}
                         </Button>
 
-                        <Button
-                            variant="destructive"
-                            onClick={startBulkDelete}
-                        >
+                        <Button variant="destructive" onClick={startBulkDelete}>
                             Start Delete
             </Button>
                     </div>
@@ -324,7 +334,7 @@ export default function Scan() {
 
             {scanTab === "duplicates" && (
                 <>
-                    {/* Filters */}
+                    {/* Filters + Approve All Visible */}
                     <div className="flex flex-wrap items-center gap-3">
                         <Filter className="h-4 w-4 text-muted-foreground" />
                         <select
@@ -347,6 +357,27 @@ export default function Scan() {
                             <option value="movie">Movies</option>
                             <option value="episode">Episodes</option>
                         </select>
+
+                        <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={!duplicates?.items?.length}
+                            onClick={() => {
+                                if (!duplicates?.items?.length) return;
+                                const ok = window.confirm(
+                                    `Approve all ${duplicates.items.length} visible sets?`
+                                );
+                                if (!ok) return;
+                                duplicates.items.forEach((set: DuplicateSet) => {
+                                    updateSetStatusMutation.mutate({
+                                        setId: set.id,
+                                        status: "approved",
+                                    });
+                                });
+                            }}
+                        >
+                            Approve All Visible
+            </Button>
                     </div>
 
                     {/* Duplicate list */}
@@ -364,6 +395,9 @@ export default function Scan() {
                                     set={set}
                                     onToggleKeep={(setId, fileId, keep) =>
                                         toggleKeepMutation.mutate({ setId, fileId, keep })
+                                    }
+                                    onUpdateStatus={(setId, status) =>
+                                        updateSetStatusMutation.mutate({ setId, status })
                                     }
                                 />
                             ))}

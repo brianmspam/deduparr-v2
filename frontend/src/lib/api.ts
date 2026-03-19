@@ -259,6 +259,11 @@ export const scanAPI = {
             `/api/scan/duplicates/${setId}/files/${fileId}`,
             { keep },
         ),
+    updateSetStatus: (setId: number, status: string) =>
+        patchAPI<{ id: number; status: string }>(
+            `/api/scan/duplicates/${setId}/status`,
+            { status }
+        ),
 };
 
 export const configAPI = {
@@ -341,3 +346,4 @@ export const systemAPI = {
     getLogs: (lines = 100) =>
         fetchAPI<LogsResponse>(`/api/system/logs?lines=${lines}`),
 };
+
