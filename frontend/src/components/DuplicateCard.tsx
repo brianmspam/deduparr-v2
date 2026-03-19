@@ -75,7 +75,7 @@ export default function DuplicateCard({
                     {onUpdateStatus && (
                         <div className="ml-2 flex items-center gap-1">
                             <Button
-                                size="xs"
+                                size="sm"
                                 variant={set.status === "approved" ? "default" : "outline"}
                                 onClick={(e) => {
                                     e.stopPropagation();
@@ -85,7 +85,7 @@ export default function DuplicateCard({
                                 Approve
               </Button>
                             <Button
-                                size="xs"
+                                size="sm"
                                 variant={set.status === "rejected" ? "destructive" : "outline"}
                                 onClick={(e) => {
                                     e.stopPropagation();
