@@ -11,8 +11,6 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from sqlalchemy.orm import selectinload
-
 from app.api.deps import get_db
 from app.models.config import Config
 from app.models.duplicate import DuplicateFile, DuplicateSet, DuplicateStatus
@@ -59,7 +57,6 @@ async def start_scan(request: ScanStartRequest, db: AsyncSession = Depends(get_d
             if not url_config or not token_config or not url_config.value or not token_config.value:
                 raise HTTPException(status_code=400, detail="Plex not configured")
 
-            # If no libraries selected, auto-discover all libraries
             library_names = request.library_names
             if not library_names:
                 from app.services.plex_api_service import PlexApiService
@@ -110,7 +107,6 @@ async def get_duplicates(
     result = await db.execute(query)
     sets = result.scalars().unique().all()
 
-    # Get total count
     count_query = select(func.count(DuplicateSet.id))
     if status:
         count_query = count_query.where(DuplicateSet.status == status)
@@ -193,49 +189,35 @@ async def update_file_keep_flag(
 
     return {"id": dup_file.id, "keep": dup_file.keep}
 
-@router.post("/delete")
-async def delete_all_non_keep_files(
+
+class SetStatusUpdate(BaseModel):
+    status: str  # "pending" | "approved" | "rejected" | "processed"
+
+
+@router.patch("/duplicates/{set_id}/status")
+async def update_set_status(
+    set_id: int,
+    body: SetStatusUpdate,
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Bulk delete: for all duplicate sets, call the existing per-set delete endpoint logic.
-    This is what the 'Start Delete' button calls.
-    """
-    from app.services.deletion_pipeline import DeletionPipeline
-
-    # Decide which sets to process. Example: all sets with status APPROVED.
     result = await db.execute(
-        select(DuplicateSet.id).where(DuplicateSet.status == DuplicateStatus.APPROVED)
+        select(DuplicateSet).where(DuplicateSet.id == set_id)
     )
-    set_ids = [row[0] for row in result.fetchall()]
+    dup_set = result.scalar_one_or_none()
+    if not dup_set:
+        raise HTTPException(status_code=404, detail="Set not found")
 
-    if not set_ids:
-        return {
-            "status": "ok",
-            "deleted_sets": 0,
-            "deleted_files": 0,
-            "space_freed": 0,
-        }
+    try:
+        dup_set.status = DuplicateStatus(body.status)  # ← FIXED: cast to enum
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid status '{body.status}'. Must be one of: {[s.value for s in DuplicateStatus]}",
+        )
 
-    pipeline = DeletionPipeline(db, dry_run=False)
+    await db.commit()
+    return {"id": dup_set.id, "status": dup_set.status.value}
 
-    total_deleted_sets = 0
-    total_deleted_files = 0
-    total_space_freed = 0
-
-    for set_id in set_ids:
-        # Reuse the same logic as /duplicates/{set_id}/delete
-        res = await pipeline.delete_set(set_id)
-        total_deleted_sets += 1
-        total_deleted_files += res.get("deleted_files", 0)
-        total_space_freed += res.get("space_freed", 0)
-
-    return {
-        "status": "ok",
-        "deleted_sets": total_deleted_sets,
-        "deleted_files": total_deleted_files,
-        "space_freed": total_space_freed,
-    }
 
 class BulkDeleteFile(BaseModel):
     id: int
@@ -244,42 +226,43 @@ class BulkDeleteFile(BaseModel):
     file_path: str
     file_size: int
 
+
 class BulkDeletePreviewResponse(BaseModel):
     items: list[BulkDeleteFile]
     total_files: int
     total_space_to_free: int
 
 
+# FIX: only preview files from APPROVED sets
 @router.get("/delete/preview")
 async def preview_bulk_delete(db: AsyncSession = Depends(get_db)):
     """
     Combined preview of all files that would be deleted by bulk 'Start Delete'.
 
     Rules:
-      - Ignore set status.
-      - In each duplicate set, delete files where keep == False.
+      - Only include sets with status APPROVED.
+      - Within those sets, only include files where keep == False.
     """
     from app.services.deletion_pipeline import DeletionPipeline
 
     result = await db.execute(
         select(DuplicateSet)
         .options(selectinload(DuplicateSet.files))
+        .where(DuplicateSet.status == DuplicateStatus.APPROVED)  # ← FIXED
     )
     sets = result.scalars().unique().all()
 
-    pipeline = DeletionPipeline(db, dry_run=True)
+    pipeline = DeletionPipeline(db, dry_run=False)
 
     items: list[dict] = []
     total_space = 0
 
     for dup_set in sets:
-        # Skip sets where all files are KEEP
         if not any(not f.keep for f in dup_set.files):
             continue
 
         preview = await pipeline.preview_deletion(dup_set.id)
 
-        # Match whatever shape preview_deletion returns
         files_section = (
             preview.get("files_to_delete")
             or preview.get("files")
@@ -305,6 +288,7 @@ async def preview_bulk_delete(db: AsyncSession = Depends(get_db)):
         "total_space_to_free": total_space,
     }
 
+
 class BulkDeleteResult(BaseModel):
     status: str
     deleted_files: int
@@ -312,22 +296,19 @@ class BulkDeleteResult(BaseModel):
     deleted_file_ids: list[int]
 
 
+# FIX: single handler, APPROVED only
 @router.post("/delete", response_model=BulkDeleteResult)
 async def delete_all_non_keep_files(
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Run bulk delete across all selected duplicate sets.
-    """
+    """Bulk delete non-KEEP files from all APPROVED sets."""
     from app.services.deletion_pipeline import DeletionPipeline
 
     result = await db.execute(
-      select(DuplicateSet.id).where(
-          DuplicateSet.status.in_(
-              [DuplicateStatus.PENDING, DuplicateStatus.APPROVED]
-          )
+        select(DuplicateSet.id).where(
+            DuplicateSet.status == DuplicateStatus.APPROVED  # ← FIXED
         )
-      )
+    )
     set_ids = [row[0] for row in result.fetchall()]
 
     if not set_ids:
@@ -356,26 +337,3 @@ async def delete_all_non_keep_files(
         space_freed=space_freed,
         deleted_file_ids=deleted_file_ids,
     )
-
-
-class SetStatusUpdate(BaseModel):
-    status: str  # "pending" | "approved" | "rejected" | "processed"
-
-@router.patch("/duplicates/{set_id}/status")
-async def update_set_status(
-    set_id: int,
-    body: SetStatusUpdate,
-    db: AsyncSession = Depends(get_db),
-):
-    """Update approval status for a duplicate set."""
-    result = await db.execute(
-        select(DuplicateSet).where(DuplicateSet.id == set_id)
-    )
-    dup_set = result.scalar_one_or_none()
-    if not dup_set:
-        raise HTTPException(status_code=404, detail="Set not found")
-
-    # If you use an Enum, map string -> enum here; for now assume stored as string
-    dup_set.status = body.status
-    await db.commit()
-    return {"id": dup_set.id, "status": dup_set.status}
