@@ -6,10 +6,10 @@ COPY frontend/ ./
 RUN npm run build
 
 FROM python:3.12-slim
-RUN apt-get update && apt-get install -y nginx supervisor curl && rm -rf /var/lib/apt/lists/*
-
-FROM python:3.12-slim
 RUN apt-get update && apt-get install -y \
+    nginx \
+    supervisor \
+    curl \
     sqlite3 \
     && rm -rf /var/lib/apt/lists/*
 
