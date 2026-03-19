@@ -236,19 +236,12 @@ class BulkDeletePreviewResponse(BaseModel):
 # FIX: only preview files from APPROVED sets
 @router.get("/delete/preview")
 async def preview_bulk_delete(db: AsyncSession = Depends(get_db)):
-    """
-    Combined preview of all files that would be deleted by bulk 'Start Delete'.
-
-    Rules:
-      - Only include sets with status APPROVED.
-      - Within those sets, only include files where keep == False.
-    """
     from app.services.deletion_pipeline import DeletionPipeline
 
     result = await db.execute(
         select(DuplicateSet)
         .options(selectinload(DuplicateSet.files))
-        .where(DuplicateSet.status == DuplicateStatus.APPROVED)  # ← FIXED
+        .where(DuplicateSet.status == DuplicateStatus.APPROVED)
     )
     sets = result.scalars().unique().all()
 
@@ -263,23 +256,17 @@ async def preview_bulk_delete(db: AsyncSession = Depends(get_db)):
 
         preview = await pipeline.preview_deletion(dup_set.id)
 
-        files_section = (
-            preview.get("files_to_delete")
-            or preview.get("files")
-            or []
-        )
-        space_to_free = preview.get("space_to_free") or 0
+        files_section = preview.get("delete") or []          # ← FIXED: was "files_to_delete" / "files"
+        space_to_free = preview.get("space_to_reclaim") or 0 # ← FIXED: was "space_to_free"
 
         for f in files_section:
-            items.append(
-                {
-                    "id": f["id"],
-                    "set_id": dup_set.id,
-                    "title": dup_set.title,
-                    "file_path": f["file_path"],
-                    "file_size": f["file_size"],
-                }
-            )
+            items.append({
+                "id": f["id"],
+                "set_id": dup_set.id,
+                "title": dup_set.title,
+                "file_path": f["file_path"],
+                "file_size": f["file_size"],
+            })
         total_space += space_to_free
 
     return {
@@ -287,7 +274,6 @@ async def preview_bulk_delete(db: AsyncSession = Depends(get_db)):
         "total_files": len(items),
         "total_space_to_free": total_space,
     }
-
 
 class BulkDeleteResult(BaseModel):
     status: str
@@ -298,26 +284,16 @@ class BulkDeleteResult(BaseModel):
 
 # FIX: single handler, APPROVED only
 @router.post("/delete", response_model=BulkDeleteResult)
-async def delete_all_non_keep_files(
-    db: AsyncSession = Depends(get_db),
-):
-    """Bulk delete non-KEEP files from all APPROVED sets."""
+async def delete_all_non_keep_files(db: AsyncSession = Depends(get_db)):
     from app.services.deletion_pipeline import DeletionPipeline
 
     result = await db.execute(
-        select(DuplicateSet.id).where(
-            DuplicateSet.status == DuplicateStatus.APPROVED  # ← FIXED
-        )
+        select(DuplicateSet.id).where(DuplicateSet.status == DuplicateStatus.APPROVED)
     )
     set_ids = [row[0] for row in result.fetchall()]
 
     if not set_ids:
-        return BulkDeleteResult(
-            status="ok",
-            deleted_files=0,
-            space_freed=0,
-            deleted_file_ids=[],
-        )
+        return BulkDeleteResult(status="ok", deleted_files=0, space_freed=0, deleted_file_ids=[])
 
     pipeline = DeletionPipeline(db, dry_run=False)
 
@@ -326,10 +302,15 @@ async def delete_all_non_keep_files(
     deleted_file_ids: list[int] = []
 
     for set_id in set_ids:
-        res: dict[str, Any] = await pipeline.delete_set(set_id)
-        deleted_files += res.get("deleted_files", 0)
-        space_freed += res.get("space_freed", 0)
-        deleted_file_ids.extend(res.get("deleted_file_ids", []))
+        res = await pipeline.delete_set(set_id)
+        file_results = res.get("results", [])                        # ← FIXED: was "deleted_files"
+        deleted_files += len([r for r in file_results if r.get("success")])
+        space_freed += sum(                                           # ← FIXED: was "space_freed"
+            r.get("file_size", 0) for r in file_results if r.get("success")
+        )
+        deleted_file_ids.extend(                                      # ← FIXED: was "deleted_file_ids"
+            r["file_id"] for r in file_results if r.get("success")
+        )
 
     return BulkDeleteResult(
         status="ok",
@@ -337,3 +318,4 @@ async def delete_all_non_keep_files(
         space_freed=space_freed,
         deleted_file_ids=deleted_file_ids,
     )
+
