@@ -74,9 +74,9 @@ class DeletionPipeline:
             deleted_from_disk=deleted_from_disk,
             plex_refreshed=plex_refreshed,
             deleted_from_arr=deleted_from_arr,
-            deleted_from_qbit=False,   # ← ADD THIS
             error="; ".join(errors) if errors else None,
         )
+
         self.db.add(history)
         await self.db.commit()
 

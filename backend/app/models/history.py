@@ -18,6 +18,7 @@ class DeletionHistory(Base):
     deleted_from_disk = Column(Boolean, default=False, nullable=False)
     plex_refreshed = Column(Boolean, default=False, nullable=False)
     deleted_from_arr = Column(Boolean, default=False, nullable=False)
+    deleted_from_qbit = Column(Boolean, default=False, nullable=False)  # ← ADD THIS
     error = Column(Text, nullable=True)
     arr_type = Column(Text, nullable=True)
 
