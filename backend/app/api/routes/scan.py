@@ -266,6 +266,18 @@ async def update_set_status(
     await db.commit()
     return {"id": dup_set.id, "status": dup_set.status.value}
 
+@router.post("/duplicates/approve-all-pending")
+async def approve_all_pending(db: AsyncSession = Depends(get_db)):
+    """Mark all PENDING sets as APPROVED."""
+    result = await db.execute(
+        select(DuplicateSet).where(DuplicateSet.status == DuplicateStatus.PENDING)
+    )
+    sets = result.scalars().all()
+    for s in sets:
+        s.status = DuplicateStatus.APPROVED
+    await db.commit()
+    return {"approved": len(sets)}
+
 
 @router.get("/delete/preview")
 async def preview_bulk_delete(db: AsyncSession = Depends(get_db)):

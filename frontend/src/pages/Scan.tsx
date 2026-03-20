@@ -143,8 +143,24 @@ export default function Scan() {
         );
     };
 
+    const approveAllPending = async () => {
+        try {
+            const res = await fetch("/api/scan/duplicates/approve-all-pending", {
+                method: "POST",
+            });
+            const data = await res.json();
+            queryClient.invalidateQueries({ queryKey: ["duplicates"] });
+            queryClient.invalidateQueries({ queryKey: ["scan-status"] });
+            refreshDeletionsPreview();
+            setDeleteRunStatus(`Approved ${data.approved} pending sets`);
+        } catch (err: any) {
+            console.error("Approve all failed:", err);
+        }
+    };
+
     const runBulkDelete = async () => {
         try {
+            setIsDeleting(true);  // ← ADD
             setDeleteRunStatus("Deleting...");
             const res = await fetch("/api/scan/delete", {
                 method: "POST",
@@ -171,8 +187,12 @@ export default function Scan() {
             queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
         } catch (err: any) {
             setDeleteRunStatus(`Delete failed: ${err?.message || String(err)}`);
+        } finally {
+            setIsDeleting(false);  // ← ADD
         }
     };
+
+    const [isDeleting, setIsDeleting] = useState<boolean>(false);
 
     const verifyDeletions = async () => {
         if (deletions.length === 0) return;
@@ -346,11 +366,9 @@ export default function Scan() {
 
             {scanTab === "duplicates" && (
                 <>
-                    {/* Filters + Approve All Visible */}
+                    {/* Filters + buttons */}
                     <div className="flex flex-wrap items-center gap-3">
                         <Filter className="h-4 w-4 text-muted-foreground" />
-
-                        {/* Search field */}
                         <input
                             type="text"
                             placeholder="Search by title..."
@@ -358,7 +376,6 @@ export default function Scan() {
                             onChange={(e) => setSearchFilter(e.target.value)}
                             className="rounded-md border bg-transparent px-3 py-1.5 text-sm w-56"
                         />
-
                         <select
                             value={statusFilter}
                             onChange={(e) => setStatusFilter(e.target.value)}
@@ -393,7 +410,16 @@ export default function Scan() {
                         >
                             Approve All Visible
     </Button>
+
+                        <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={approveAllPending}
+                        >
+                            Approve All Pending
+    </Button>
                     </div>
+
 
 
                     {/* Duplicate list */}
@@ -441,15 +467,22 @@ export default function Scan() {
                                 size="sm"
                                 variant="destructive"
                                 onClick={runBulkDelete}
-                                disabled={deletions.length === 0}
+                                disabled={deletions.length === 0 || isDeleting}
                             >
-                                Run Delete
+                                {isDeleting ? (
+                                    <>
+                                        <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                                   Deleting...
+                                </>
+                                ) : (
+                                        "Run Delete"
+                                    )}
                             </Button>
                             <Button
                                 size="sm"
                                 variant="outline"
                                 onClick={verifyDeletions}
-                                disabled={deletions.length === 0}
+                                disabled={deletions.length === 0 || isDeleting}
                             >
                                 <RefreshCw className="mr-2 h-4 w-4" />
                                 Refresh Status
