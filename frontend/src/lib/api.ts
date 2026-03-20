@@ -234,21 +234,21 @@ export const scanAPI = {
     startScan: (libraryNames: string[], method: string) =>
         postAPI<ScanResult>("/api/scan/start", { library_names: libraryNames, method }),
     getStatus: () => fetchAPI<Record<string, number>>("/api/scan/status"),
-    getDuplicates: async (params: {
+    getDuplicates: async (params?: {
         status?: string;
         media_type?: string;
-        search?: string;   // ← ADD
+        search?: string;
         limit?: number;
         offset?: number;
     }) => {
-        const query = new URLSearchParams();
-        if (params.status) query.set("status", params.status);
-        if (params.media_type) query.set("media_type", params.media_type);
-        if (params.search) query.set("search", params.search);  // ← ADD
-        if (params.limit) query.set("limit", String(params.limit));
-        if (params.offset) query.set("offset", String(params.offset));
-        const res = await api.get(`/scan/duplicates?${query.toString()}`);
-        return res.data;
+        const qs = new URLSearchParams();
+        if (params?.status) qs.set("status", params.status);
+        if (params?.media_type) qs.set("media_type", params.media_type);
+        if (params?.search) qs.set("search", params.search);  // ← ADD
+        if (params?.limit) qs.set("limit", String(params.limit));
+        if (params?.offset) qs.set("offset", String(params.offset));
+        const queryString = qs.toString();
+        return fetchAPI<DuplicatesResponse>(`/api/scan/duplicates${queryString ? `?${queryString}` : ""}`);
     },
     previewDeletion: (setId: number) =>
         fetchAPI<DeletionPreview>(`/api/scan/duplicates/${setId}/preview`),
