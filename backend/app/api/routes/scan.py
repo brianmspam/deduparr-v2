@@ -136,6 +136,7 @@ async def get_scan_status(db: AsyncSession = Depends(get_db)):
 async def get_duplicates(
     status: Optional[str] = Query(None),
     media_type: Optional[str] = Query(None),
+    search: Optional[str] = Query(None),
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
