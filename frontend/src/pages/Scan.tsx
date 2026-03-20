@@ -101,7 +101,6 @@ export default function Scan() {
                 status: "pending",
             }));
             setDeletions(items);
-            setScanTab("deletions");
             setDeleteRunStatus(
                 `Ready: ${data.total_files} files, will free ${formatBytes(
                     data.total_space_to_free || 0
