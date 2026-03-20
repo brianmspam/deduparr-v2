@@ -319,3 +319,13 @@ async def delete_all_non_keep_files(db: AsyncSession = Depends(get_db)):
         deleted_file_ids=deleted_file_ids,
     )
 
+    # ← NEW: sweep for already-missing files and mark those sets processed too
+    await pipeline.mark_missing_files_as_processed()
+
+    return BulkDeleteResult(
+        status="ok",
+        deleted_files=deleted_files,
+        space_freed=space_freed,
+        deleted_file_ids=deleted_file_ids,
+    )
+

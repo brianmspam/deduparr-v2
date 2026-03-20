@@ -205,3 +205,34 @@ class DeletionPipeline:
                     await client.remove_file(dup_file.file_path)
         except Exception as e:
             logger.warning(f"Failed to remove from *arr: {e}")
+
+    async def mark_missing_files_as_processed(self) -> dict[str, Any]:
+        """
+        For all APPROVED sets, check if non-KEEP files are missing from disk.
+        If all non-KEEP files are gone, mark the set as PROCESSED.
+        """
+        result = await self.db.execute(
+            select(DuplicateSet)
+            .options(selectinload(DuplicateSet.files))
+            .where(DuplicateSet.status == DuplicateStatus.APPROVED)
+        )
+        sets = result.scalars().unique().all()
+
+        processed_sets = 0
+
+        for dup_set in sets:
+            non_keep_files = [f for f in dup_set.files if not f.keep]
+            if not non_keep_files:
+                continue
+
+            # If every non-KEEP file is missing from disk, mark set as PROCESSED
+            all_missing = all(not os.path.isfile(f.file_path) for f in non_keep_files)
+            if all_missing:
+                dup_set.status = DuplicateStatus.PROCESSED
+                processed_sets += 1
+                logger.info(f"Marked set {dup_set.id} '{dup_set.title}' as PROCESSED (files missing from disk)")
+
+        if processed_sets:
+            await self.db.commit()
+
+        return {"sets_marked_processed": processed_sets}
