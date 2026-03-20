@@ -173,6 +173,26 @@ export default function Scan() {
         }
     };
 
+    const verifyDeletions = async () => {
+        if (deletions.length === 0) return;
+        try {
+            const res = await fetch("/api/scan/delete/verify", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ file_ids: deletions.map((d) => d.id) }),
+            });
+            const data = await res.json();
+            const missingIds = new Set<number>(data.missing || []);
+            setDeletions((items) =>
+                items.map((item) =>
+                    missingIds.has(item.id) ? { ...item, status: "deleted" } : { ...item, status: "pending" }
+                )
+            );
+        } catch (err: any) {
+            console.error("Verify failed:", err);
+        }
+    };
+
     return (
         <div className="space-y-6">
             <h1 className="text-2xl font-bold">Scan & Duplicates</h1>
@@ -410,6 +430,31 @@ export default function Scan() {
                                 disabled={deletions.length === 0}
                             >
                                 Run Delete
+                            </Button>
+                            {deleteRunStatus && (
+                                <span className="text-xs text-muted-foreground">
+                                    {deleteRunStatus}
+                                </span>
+                            )}
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                            <Button
+                                size="sm"
+                                variant="destructive"
+                                onClick={runBulkDelete}
+                                disabled={deletions.length === 0}
+                            >
+                                Run Delete
+                            </Button>
+                            <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={verifyDeletions}
+                                disabled={deletions.length === 0}
+                            >
+                                <RefreshCw className="mr-2 h-4 w-4" />
+                                Refresh Status
                             </Button>
                             {deleteRunStatus && (
                                 <span className="text-xs text-muted-foreground">

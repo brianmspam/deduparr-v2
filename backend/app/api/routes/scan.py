@@ -31,6 +31,25 @@ class DeleteRequest(BaseModel):
 class FileUpdateRequest(BaseModel):
     keep: bool
 
+class VerifyFilesRequest(BaseModel):
+    file_ids: list[int]
+
+@router.post("/delete/verify")
+async def verify_files(
+    request: VerifyFilesRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Check which files are missing from disk."""
+    result = await db.execute(
+        select(DuplicateFile).where(DuplicateFile.id.in_(request.file_ids))
+    )
+    files = result.scalars().all()
+
+    missing = [f.id for f in files if not os.path.isfile(f.file_path)]
+    present = [f.id for f in files if os.path.isfile(f.file_path)]
+
+    return {"missing": missing, "present": present}
+
 
 @router.post("/start")
 async def start_scan(request: ScanStartRequest, db: AsyncSession = Depends(get_db)):
