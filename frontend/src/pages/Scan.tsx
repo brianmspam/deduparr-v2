@@ -29,6 +29,7 @@ export default function Scan() {
     const [selectedLibs, setSelectedLibs] = useState<string[]>([]);
     const [statusFilter, setStatusFilter] = useState<string>("");
     const [mediaFilter, setMediaFilter] = useState<string>("");
+    const [searchFilter, setSearchFilter] = useState<string>("");  // ← MOVED HERE
 
     const [scanTab, setScanTab] = useState<"duplicates" | "deletions">("duplicates");
     const [deletions, setDeletions] = useState<DeletionItem[]>([]);
@@ -41,12 +42,14 @@ export default function Scan() {
         retry: false,
     });
 
+    // ← SINGLE useQuery with searchFilter, replaces both old ones
     const { data: duplicates, isLoading: loadingDups } = useQuery({
-        queryKey: ["duplicates", statusFilter, mediaFilter],
+        queryKey: ["duplicates", statusFilter, mediaFilter, searchFilter],
         queryFn: () =>
             scanAPI.getDuplicates({
                 status: statusFilter || undefined,
                 media_type: mediaFilter || undefined,
+                search: searchFilter || undefined,
                 limit: 100,
             }),
         staleTime: 30 * 1000,
@@ -111,7 +114,6 @@ export default function Scan() {
         }
     };
 
-    // ✅ single definition, with onSuccess auto-refresh
     const updateSetStatusMutation = useMutation({
         mutationFn: ({
             setId,
@@ -129,7 +131,6 @@ export default function Scan() {
         },
     });
 
-    // ✅ inside the component, after all state/mutations
     useEffect(() => {
         if (scanTab === "deletions") {
             refreshDeletionsPreview();
@@ -185,27 +186,15 @@ export default function Scan() {
             const missingIds = new Set<number>(data.missing || []);
             setDeletions((items) =>
                 items.map((item) =>
-                    missingIds.has(item.id) ? { ...item, status: "deleted" } : { ...item, status: "pending" }
+                    missingIds.has(item.id)
+                        ? { ...item, status: "deleted" }
+                        : { ...item, status: "pending" }
                 )
             );
         } catch (err: any) {
             console.error("Verify failed:", err);
         }
     };
-
-    const [searchFilter, setSearchFilter] = useState<string>("");
-
-    const { data: duplicates, isLoading: loadingDups } = useQuery({
-        queryKey: ["duplicates", statusFilter, mediaFilter, searchFilter],
-        queryFn: () =>
-            scanAPI.getDuplicates({
-                status: statusFilter || undefined,
-                media_type: mediaFilter || undefined,
-                search: searchFilter || undefined,  // ← ADD
-                limit: 100,
-            }),
-        staleTime: 30 * 1000,
-    });
 
     return (
         <div className="space-y-6">
