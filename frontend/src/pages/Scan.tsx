@@ -431,22 +431,6 @@ export default function Scan() {
                             >
                                 Run Delete
                             </Button>
-                            {deleteRunStatus && (
-                                <span className="text-xs text-muted-foreground">
-                                    {deleteRunStatus}
-                                </span>
-                            )}
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                            <Button
-                                size="sm"
-                                variant="destructive"
-                                onClick={runBulkDelete}
-                                disabled={deletions.length === 0}
-                            >
-                                Run Delete
-                            </Button>
                             <Button
                                 size="sm"
                                 variant="outline"
