@@ -90,6 +90,11 @@ export default function Scan() {
         try {
             setDeleteRunStatus("Loading preview...");
             const res = await fetch("/api/scan/delete/preview");
+
+            if (!res.ok) {
+                throw new Error(`Preview failed (${res.status})`);
+            }
+
             const text = await res.text();
             const data = text
                 ? JSON.parse(text)
@@ -160,17 +165,25 @@ export default function Scan() {
 
     const runBulkDelete = async () => {
         try {
-            setIsDeleting(true);  // ← ADD
+            setIsDeleting(true);
             setDeleteRunStatus("Deleting...");
             const res = await fetch("/api/scan/delete", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
             });
+
+            // ← Check OK *before* trying to parse
+            if (!res.ok) {
+                const contentType = res.headers.get("content-type") || "";
+                const errText = contentType.includes("application/json")
+                    ? (await res.json()).detail ?? `Delete failed (${res.status})`
+                    : `Delete failed (${res.status}) — server returned an unexpected response`;
+                throw new Error(errText);
+            }
+
             const text = await res.text();
             const data = text ? JSON.parse(text) : null;
-            if (!res.ok) {
-                throw new Error(data?.detail || `Delete failed (${res.status})`);
-            }
+
             const deletedIds = new Set<number>(data?.deleted_file_ids || []);
             setDeletions((items) =>
                 items.map((item) =>
@@ -188,9 +201,10 @@ export default function Scan() {
         } catch (err: any) {
             setDeleteRunStatus(`Delete failed: ${err?.message || String(err)}`);
         } finally {
-            setIsDeleting(false);  // ← ADD
+            setIsDeleting(false);
         }
     };
+
 
     const [isDeleting, setIsDeleting] = useState<boolean>(false);
 
