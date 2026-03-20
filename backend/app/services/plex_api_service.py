@@ -10,6 +10,9 @@ import requests
 import plexapi
 from plexapi.myplex import MyPlexAccount, MyPlexPinLogin
 from plexapi.server import PlexServer
+import urllib3
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 plexapi.X_PLEX_PRODUCT = "DeDuparr"
 

@@ -15,6 +15,7 @@ class ArrClient:
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
         self.headers = {"X-Api-Key": self.api_key}
+        self._enabled = bool(base_url and api_key)
 
     async def test_connection(self) -> dict[str, Any]:
         try:
@@ -34,6 +35,8 @@ class ArrClient:
             return {"success": False, "error": str(e)}
 
     async def remove_file(self, file_path: str) -> bool:
+        if not self._enabled: 
+           return False
         """Look up a media file by path and trigger a rescan."""
         try:
             async with httpx.AsyncClient() as client:
