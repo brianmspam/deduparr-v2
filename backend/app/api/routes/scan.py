@@ -147,6 +147,8 @@ async def get_duplicates(
         query = query.where(DuplicateSet.status == status)
     if media_type:
         query = query.where(DuplicateSet.media_type == media_type)
+    if search:                                                         # ← ADD
+        query = query.where(DuplicateSet.title.ilike(f"%{search}%"))  # ← ADD
 
     query = query.order_by(DuplicateSet.found_at.desc()).offset(offset).limit(limit)
     result = await db.execute(query)
@@ -157,6 +159,9 @@ async def get_duplicates(
         count_query = count_query.where(DuplicateSet.status == status)
     if media_type:
         count_query = count_query.where(DuplicateSet.media_type == media_type)
+    if search:                                                              # ← ADD
+        count_query = count_query.where(DuplicateSet.title.ilike(f"%{search}%"))  # ← ADD
+
     count_result = await db.execute(count_query)
     total = count_result.scalar() or 0
 

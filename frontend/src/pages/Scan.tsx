@@ -193,6 +193,20 @@ export default function Scan() {
         }
     };
 
+    const [searchFilter, setSearchFilter] = useState<string>("");
+
+    const { data: duplicates, isLoading: loadingDups } = useQuery({
+        queryKey: ["duplicates", statusFilter, mediaFilter, searchFilter],
+        queryFn: () =>
+            scanAPI.getDuplicates({
+                status: statusFilter || undefined,
+                media_type: mediaFilter || undefined,
+                search: searchFilter || undefined,  // ← ADD
+                limit: 100,
+            }),
+        staleTime: 30 * 1000,
+    });
+
     return (
         <div className="space-y-6">
             <h1 className="text-2xl font-bold">Scan & Duplicates</h1>
@@ -346,6 +360,16 @@ export default function Scan() {
                     {/* Filters + Approve All Visible */}
                     <div className="flex flex-wrap items-center gap-3">
                         <Filter className="h-4 w-4 text-muted-foreground" />
+
+                        {/* Search field */}
+                        <input
+                            type="text"
+                            placeholder="Search by title..."
+                            value={searchFilter}
+                            onChange={(e) => setSearchFilter(e.target.value)}
+                            className="rounded-md border bg-transparent px-3 py-1.5 text-sm w-56"
+                        />
+
                         <select
                             value={statusFilter}
                             onChange={(e) => setStatusFilter(e.target.value)}
@@ -379,8 +403,9 @@ export default function Scan() {
                             }}
                         >
                             Approve All Visible
-                        </Button>
+    </Button>
                     </div>
+
 
                     {/* Duplicate list */}
                     {loadingDups ? (
