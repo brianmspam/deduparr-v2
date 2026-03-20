@@ -143,6 +143,17 @@ async def get_duplicates(
         ],
     }
 
+        # ← NEW: sweep for already-missing files and mark those sets processed too
+    await pipeline.mark_missing_files_as_processed()
+
+    return BulkDeleteResult(
+        status="ok",
+        deleted_files=deleted_files,
+        space_freed=space_freed,
+        deleted_file_ids=deleted_file_ids,
+    )
+
+
 
 @router.get("/duplicates/{set_id}/preview")
 async def preview_deletion(set_id: int, db: AsyncSession = Depends(get_db)):
@@ -311,16 +322,6 @@ async def delete_all_non_keep_files(db: AsyncSession = Depends(get_db)):
         deleted_file_ids.extend(                                      # ← FIXED: was "deleted_file_ids"
             r["file_id"] for r in file_results if r.get("success")
         )
-
-    return BulkDeleteResult(
-        status="ok",
-        deleted_files=deleted_files,
-        space_freed=space_freed,
-        deleted_file_ids=deleted_file_ids,
-    )
-
-    # ← NEW: sweep for already-missing files and mark those sets processed too
-    await pipeline.mark_missing_files_as_processed()
 
     return BulkDeleteResult(
         status="ok",
