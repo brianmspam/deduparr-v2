@@ -401,23 +401,32 @@ export default function Scan() {
                             size="sm"
                             variant="outline"
                             disabled={!duplicates?.items?.length}
-                            onClick={() => {
+                            onClick={async () => {
                                 if (!duplicates?.items?.length) return;
-                                duplicates.items.forEach((set: DuplicateSet) => {
-                                    updateSetStatusMutation.mutate({ setId: set.id, status: "approved" });
-                                });
+                                const ids = duplicates.items.map((set: DuplicateSet) => set.id);
+                                try {
+                                    await fetch("/api/scan/duplicates/approve-all-pending", {
+                                        method: "POST",
+                                        headers: { "Content-Type": "application/json" },
+                                        body: JSON.stringify({ set_ids: ids }),
+                                    });
+                                    queryClient.invalidateQueries({ queryKey: ["duplicates"] });
+                                    queryClient.invalidateQueries({ queryKey: ["scan-status"] });
+                                    refreshDeletionsPreview();
+                                } catch (err) {
+                                    console.error("Bulk approve failed:", err);
+                                }
                             }}
                         >
                             Approve All Visible
-    </Button>
-
+                        </Button>
                         <Button
                             size="sm"
                             variant="outline"
                             onClick={approveAllPending}
                         >
                             Approve All Pending
-    </Button>
+                    </Button>
                     </div>
 
 

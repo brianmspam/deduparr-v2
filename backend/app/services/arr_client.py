@@ -34,37 +34,32 @@ class ArrClient:
         except Exception as e:
             return {"success": False, "error": str(e)}
 
-    async def remove_file(self, file_path: str) -> bool:
-        if not self._enabled: 
-           return False
-        """Look up a media file by path and trigger a rescan."""
-        try:
-            async with httpx.AsyncClient() as client:
-                # Try to find the movie/series with this file
-                resp = await client.get(
-                    f"{self.base_url}/api/v3/movie",
-                    headers=self.headers,
-                    timeout=30,
-                )
-                if resp.status_code == 200:
-                    movies = resp.json()
-                    for movie in movies:
-                        if movie.get("movieFile", {}).get("path") == file_path:
-                            # Trigger rescan for this movie
-                            await client.post(
-                                f"{self.base_url}/api/v3/command",
-                                headers=self.headers,
-                                json={
-                                    "name": "RescanMovie",
-                                    "movieId": movie["id"],
-                                },
-                                timeout=10,
-                            )
-                            return True
-            return False
-        except Exception as e:
-            logger.warning(f"Arr file removal failed: {e}")
-            return False
+async def remove_file(self, file_path: str) -> bool:
+    if not self._enabled:
+        return False
+    try:
+        async with httpx.AsyncClient() as client:
+            # Look up by file path directly instead of fetching all movies
+            resp = await client.get(
+                f"{self.base_url}/api/v3/moviefile",
+                headers=self.headers,
+                params={"unmapped": False},
+                timeout=30,
+            )
+            if resp.status_code == 200:
+                for mf in resp.json():
+                    if mf.get("path") == file_path:
+                        await client.delete(
+                            f"{self.base_url}/api/v3/moviefile/{mf['id']}",
+                            headers=self.headers,
+                            timeout=10,
+                        )
+                        return True
+        return False
+    except Exception as e:
+        logger.warning(f"Arr file removal failed: {e}")
+        return False
+
 
     async def trigger_rescan(self) -> bool:
         try:

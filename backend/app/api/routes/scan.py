@@ -3,6 +3,8 @@ import os
 import json
 import logging
 from typing import Optional, Any
+from typing import Optional, List
+from pydantic import BaseModel
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -319,6 +321,26 @@ async def preview_bulk_delete(db: AsyncSession = Depends(get_db)):
         "total_files": len(items),
         "total_space_to_free": total_space,
     }
+
+class BulkApproveRequest(BaseModel):
+    set_ids: Optional[List[int]] = None  # None = approve ALL pending
+
+@router.post("/duplicates/approve-all-pending")
+async def approve_all_pending(
+    body: BulkApproveRequest = BulkApproveRequest(),
+    db: AsyncSession = Depends(get_db),
+):
+    query = select(DuplicateSet).where(DuplicateSet.status == DuplicateStatus.PENDING)
+    if body.set_ids:
+        query = query.where(DuplicateSet.id.in_(body.set_ids))
+    result = await db.execute(query)
+    sets = result.scalars().all()
+    for s in sets:
+        s.status = DuplicateStatus.APPROVED
+    await db.commit()
+    return {"approved": len(sets)}
+
+
 
 
 @router.post("/delete", response_model=BulkDeleteResult)
