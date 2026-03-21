@@ -455,6 +455,14 @@ export default function Scan() {
                         >
                             Approve All Pending
                     </Button>
+                        <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={reverifyAllProcessed}
+                        >
+                            <RefreshCw className="mr-2 h-4 w-4" />
+                        Re-verify Processed
+                    </Button>
                     </div>
 
 
