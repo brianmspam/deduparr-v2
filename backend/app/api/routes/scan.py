@@ -249,6 +249,27 @@ async def reverify_set(set_id: int, db: AsyncSession = Depends(get_db)):
 
     return {"reset": False, "reason": "All non-kept files are already gone"}
 
+@router.post("/duplicates/reverify-all-processed")
+async def reverify_all_processed(db: AsyncSession = Depends(get_db)):
+    result = await db.execute(
+        select(DuplicateSet).where(DuplicateSet.status == DuplicateStatus.PROCESSED)
+    )
+    sets = result.scalars().all()
+    reset_count = 0
+    for s in sets:
+        files_result = await db.execute(
+            select(DuplicateFile).where(
+                DuplicateFile.set_id == s.id,
+                DuplicateFile.keep == False,
+            )
+        )
+        files = files_result.scalars().all()
+        if any(os.path.exists(f.file_path) for f in files):
+            s.status = DuplicateStatus.PENDING
+            reset_count += 1
+    await db.commit()
+    return {"reset_count": reset_count}
+
 
 @router.patch("/duplicates/{set_id}/files/{file_id}")
 async def update_file_keep_flag(

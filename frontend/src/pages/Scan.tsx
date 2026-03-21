@@ -163,6 +163,20 @@ export default function Scan() {
         }
     };
 
+    const reverifyAllProcessed = async () => {
+        try {
+            const res = await fetch("/api/scan/duplicates/reverify-all-processed", {
+                method: "POST",
+            });
+            const data = await res.json();
+            queryClient.invalidateQueries({ queryKey: ["duplicates"] });
+            queryClient.invalidateQueries({ queryKey: ["scan-status"] });
+            setDeleteRunStatus(`Re-verified: ${data.reset_count} sets moved back to pending`);
+        } catch (err) {
+            console.error("Reverify all failed:", err);
+        }
+    };
+
     const runBulkDelete = async () => {
         try {
             setIsDeleting(true);
