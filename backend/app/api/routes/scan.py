@@ -218,10 +218,6 @@ async def delete_duplicates(
 
 @router.post("/duplicates/{set_id}/reverify")
 async def reverify_set(set_id: int, db: AsyncSession = Depends(get_db)):
-    """
-    For a PROCESSED set, check if any of its non-kept files still exist on disk.
-    If any do, reset the set back to PENDING.
-    """
     result = await db.execute(
         select(DuplicateSet).where(DuplicateSet.id == set_id)
     )
@@ -244,16 +240,23 @@ async def reverify_set(set_id: int, db: AsyncSession = Depends(get_db)):
             "reason": f"{len(still_exist)} file(s) still exist on disk",
             "files": [f.file_path for f in still_exist],
         }
-
-    return {"reset": False, "reason": "All non-kept files are already gone"}
+    else:
+        # ← Files are gone — mark as processed regardless of current status
+        dup_set.status = DuplicateStatus.PROCESSED
+        await db.commit()
+        return {
+            "reset": False,
+            "reason": "All non-kept files are gone — marked as processed",
+        }
 
 @router.post("/duplicates/reverify-all-processed")
 async def reverify_all_processed(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(
-        select(DuplicateSet).where(DuplicateSet.status == DuplicateStatus.PROCESSED)
-    )
+    # ← Check ALL sets, not just processed ones
+    result = await db.execute(select(DuplicateSet))
     sets = result.scalars().all()
     reset_count = 0
+    processed_count = 0
+
     for s in sets:
         files_result = await db.execute(
             select(DuplicateFile).where(
@@ -262,11 +265,17 @@ async def reverify_all_processed(db: AsyncSession = Depends(get_db)):
             )
         )
         files = files_result.scalars().all()
-        if any(os.path.exists(f.file_path) for f in files):
+        still_exist = [f for f in files if os.path.exists(f.file_path)]
+
+        if still_exist and s.status != DuplicateStatus.PENDING:
             s.status = DuplicateStatus.PENDING
             reset_count += 1
+        elif not still_exist and s.status != DuplicateStatus.PROCESSED:
+            s.status = DuplicateStatus.PROCESSED
+            processed_count += 1
+
     await db.commit()
-    return {"reset_count": reset_count}
+    return {"reset_count": reset_count, "processed_count": processed_count}
 
 
 @router.patch("/duplicates/{set_id}/files/{file_id}")
