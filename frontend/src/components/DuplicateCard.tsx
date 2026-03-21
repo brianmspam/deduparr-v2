@@ -1,10 +1,10 @@
-import { useState } from "react";
+﻿import { useState } from "react";
 import type { DuplicateSet } from "@/lib/api";
 import { formatBytes } from "@/lib/utils";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import FileComparison from "./FileComparison";
-import { ChevronDown, ChevronRight, Film, Tv, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronRight, Film, Tv, Trash2, RefreshCw } from "lucide-react";
 
 interface DuplicateCardProps {
     set: DuplicateSet;
@@ -14,6 +14,7 @@ interface DuplicateCardProps {
         setId: number,
         status: "pending" | "approved" | "rejected"
     ) => void;
+    onReverify?: (setId: number) => void;  // ← ADD
 }
 
 function statusVariant(status: string | null) {
@@ -36,8 +37,33 @@ export default function DuplicateCard({
     onToggleKeep,
     onDelete,
     onUpdateStatus,
+    onReverify,  // ← ADD
 }: DuplicateCardProps) {
     const [expanded, setExpanded] = useState(false);
+    const [reverifying, setReverifying] = useState(false);      // ← ADD
+    const [reverifyMessage, setReverifyMessage] = useState<string | null>(null);  // ← ADD
+
+    // ← ADD
+    const handleReverify = async (e: React.MouseEvent) => {
+        e.stopPropagation();
+        try {
+            setReverifying(true);
+            setReverifyMessage(null);
+            const res = await fetch(`/api/scan/duplicates/${set.id}/reverify`, {
+                method: "POST",
+            });
+            const data = await res.json();
+            if (data.reset) {
+                onReverify?.(set.id);
+            } else {
+                setReverifyMessage("Files already deleted — nothing to reset");
+            }
+        } catch (err) {
+            setReverifyMessage("Re-verify failed");
+        } finally {
+            setReverifying(false);
+        }
+    };
 
     return (
         <div className="rounded-lg border bg-card">
@@ -67,12 +93,25 @@ export default function DuplicateCard({
                     {set.scan_method && <Badge variant="outline">{set.scan_method}</Badge>}
                     <span className="text-xs text-muted-foreground">
                         {set.files.length} files
-          </span>
+                    </span>
                     <span className="text-xs font-medium text-warning">
                         {formatBytes(set.space_to_reclaim)}
                     </span>
 
-                    {onUpdateStatus && (
+                    {/* ← ADD: Re-verify button for processed sets */}
+                    {set.status === "processed" && (
+                        <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={reverifying}
+                            onClick={handleReverify}
+                        >
+                            <RefreshCw className={`mr-2 h-4 w-4 ${reverifying ? "animate-spin" : ""}`} />
+                            {reverifying ? "Checking..." : "Re-verify"}
+                        </Button>
+                    )}
+
+                    {onUpdateStatus && set.status !== "processed" && (
                         <div className="ml-2 flex items-center gap-1">
                             <Button
                                 size="sm"
@@ -83,7 +122,7 @@ export default function DuplicateCard({
                                 }}
                             >
                                 Approve
-              </Button>
+                            </Button>
                             <Button
                                 size="sm"
                                 variant={set.status === "rejected" ? "destructive" : "outline"}
@@ -93,11 +132,18 @@ export default function DuplicateCard({
                                 }}
                             >
                                 Reject
-              </Button>
+                            </Button>
                         </div>
                     )}
                 </div>
             </button>
+
+            {/* ← ADD: inline feedback message */}
+            {reverifyMessage && (
+                <div className="border-t px-4 py-2 text-xs text-muted-foreground">
+                    {reverifyMessage}
+                </div>
+            )}
 
             {expanded && (
                 <div className="border-t px-4 py-4">
@@ -118,8 +164,8 @@ export default function DuplicateCard({
                                 onClick={() => onDelete(set.id)}
                             >
                                 <Trash2 className="mr-2 h-4 w-4" />
-                Delete Duplicates
-              </Button>
+                                Delete Duplicates
+                            </Button>
                         </div>
                     )}
                 </div>

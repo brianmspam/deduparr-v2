@@ -218,6 +218,37 @@ async def delete_duplicates(
     pipeline = DeletionPipeline(db, dry_run=request.dry_run)
     return await pipeline.delete_set(set_id)
 
+@router.post("/duplicates/{set_id}/reverify")
+async def reverify_set(set_id: int, db: AsyncSession = Depends(get_db)):
+    """
+    For a PROCESSED set, check if any of its non-kept files still exist on disk.
+    If any do, reset the set back to PENDING.
+    """
+    result = await db.execute(
+        select(DuplicateSet).where(DuplicateSet.id == set_id)
+    )
+    dup_set = result.scalar_one_or_none()
+    if not dup_set:
+        raise HTTPException(status_code=404, detail="Set not found")
+
+    files_result = await db.execute(
+        select(DuplicateFile).where(DuplicateFile.set_id == set_id)
+    )
+    files = files_result.scalars().all()
+
+    still_exist = [f for f in files if not f.keep and os.path.exists(f.file_path)]
+
+    if still_exist:
+        dup_set.status = DuplicateStatus.PENDING
+        await db.commit()
+        return {
+            "reset": True,
+            "reason": f"{len(still_exist)} file(s) still exist on disk",
+            "files": [f.file_path for f in still_exist],
+        }
+
+    return {"reset": False, "reason": "All non-kept files are already gone"}
+
 
 @router.patch("/duplicates/{set_id}/files/{file_id}")
 async def update_file_keep_flag(
