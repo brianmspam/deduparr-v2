@@ -99,7 +99,7 @@ export default function DuplicateCard({
                     </span>
 
                     {/* ← ADD: Re-verify button for processed sets */}
-                    (
+                    {(
                         <Button
                             size="sm"
                             variant="outline"
